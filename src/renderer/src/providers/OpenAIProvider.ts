@@ -39,13 +39,6 @@ export default class OpenAIProvider extends BaseProvider {
     })
   }
 
-  private isSupportStreamOutput(modelId: string): boolean {
-    if (modelId.includes('o1-')) {
-      return false
-    }
-    return true
-  }
-
   private get isNotSupportFiles() {
     const providers = ['deepseek', 'baichuan', 'minimax', 'doubao']
     return providers.includes(this.provider.id)
@@ -137,7 +130,7 @@ export default class OpenAIProvider extends BaseProvider {
     }
 
     const isOpenAIo1 = model.id.includes('o1-')
-    const isSupportStreamOutput = streamOutput && this.isSupportStreamOutput(model.id)
+    const isSupportStreamOutput = streamOutput
 
     let time_first_token_millsec = 0
     const start_time_millsec = new Date().getTime()

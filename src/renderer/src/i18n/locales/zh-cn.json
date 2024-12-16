@@ -396,6 +396,7 @@
       "messages.model.title": "模型设置",
       "messages.title": "消息设置",
       "messages.use_serif_font": "使用衬线字体",
+      "messages.input.paste_long_text_threshold": "长文本长度",
       "model": "默认模型",
       "models.add.add_model": "添加模型",
       "models.add.group_name": "分组名称",
@@ -470,7 +471,8 @@
         "reset_to_default": "重置为默认",
         "clear_shortcut": "清除快捷键",
         "toggle_show_assistants": "切换助手显示",
-        "toggle_show_topics": "切换话题显示"
+        "toggle_show_topics": "切换话题显示",
+        "copy_last_message": "复制上一条消息"
       },
       "theme.auto": "跟随系统",
       "theme.dark": "深色主题",
