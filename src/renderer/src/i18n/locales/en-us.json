@@ -244,7 +244,8 @@
       "upgrade.success.button": "Restart",
       "upgrade.success.content": "Please restart the application to complete the upgrade",
       "upgrade.success.title": "Upgrade successfully",
-      "regenerate.confirm": "Regenerating will replace current message"
+      "regenerate.confirm": "Regenerating will replace current message",
+      "copy.success": "Copied!"
     },
     "minapp": {
       "title": "MinApp"
@@ -378,11 +379,17 @@
       "general.user_name": "User Name",
       "general.user_name.placeholder": "Enter your name",
       "general.view_webdav_settings": "View WebDAV settings",
+      "general.display.title": "Display Settings",
+      "display.sidebar.minapp.icon": "Show MinApp icon",
+      "display.sidebar.files.icon": "Show Files icon",
+      "display.sidebar.title": "Sidebar Settings",
+      "display.topic.title": "Topic Settings",
       "input.auto_translate_with_space": "Quickly translate with 3 spaces",
       "messages.divider": "Show divider between messages",
       "messages.input.paste_long_text_as_file": "Paste long text as file",
       "messages.input.send_shortcuts": "Send shortcuts",
       "messages.input.show_estimated_tokens": "Show estimated tokens",
+      "messages.metrics": "{{time_first_token_millsec}}ms to first token • {{token_speed}} tok/sec • ",
       "messages.input.title": "Input Settings",
       "messages.markdown_rendering_input_message": "Markdown render input msg",
       "messages.math_engine": "Math render engine",
