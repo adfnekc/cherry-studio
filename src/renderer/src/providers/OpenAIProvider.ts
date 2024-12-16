@@ -153,6 +153,8 @@ export default class OpenAIProvider extends BaseProvider {
       max_tokens: maxTokens,
       keep_alive: this.keepAliveTime,
       stream: isSupportStreamOutput
+    }, {
+      headers: { "Range": "" }
     })
 
     if (!isSupportStreamOutput) {
