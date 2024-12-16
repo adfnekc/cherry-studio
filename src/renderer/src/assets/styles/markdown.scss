@@ -66,6 +66,10 @@
     }
   }
 
+  ul {
+    list-style: initial;
+  }
+
   ul,
   ol {
     padding-left: 1.5em;
@@ -94,14 +98,8 @@
     background-color: var(--color-border);
   }
 
-  .katex-display {
-    span {
-      white-space: pre;
-    }
-  }
-
   span {
-    white-space: pre-wrap;
+    white-space: pre;
   }
 
   p code,

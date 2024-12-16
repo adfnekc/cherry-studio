@@ -38,6 +38,9 @@ export interface SettingsState {
   translateModelPrompt: string
   autoTranslateWithSpace: boolean
   enableTopicNaming: boolean
+  // Sidebar icons
+  showMinappIcon: boolean
+  showFilesIcon: boolean
 }
 
 const initialState: SettingsState = {
@@ -48,7 +51,7 @@ const initialState: SettingsState = {
   proxyMode: 'system',
   proxyUrl: undefined,
   userName: '',
-  showMessageDivider: false,
+  showMessageDivider: true,
   messageFont: 'system',
   showInputEstimatedTokens: false,
   tray: true,
@@ -72,7 +75,9 @@ const initialState: SettingsState = {
   webdavPath: '/cherry-studio',
   translateModelPrompt: TRANSLATE_PROMPT,
   autoTranslateWithSpace: false,
-  enableTopicNaming: true
+  enableTopicNaming: true,
+  showMinappIcon: true,
+  showFilesIcon: true
 }
 
 const settingsSlice = createSlice({
@@ -181,6 +186,12 @@ const settingsSlice = createSlice({
     },
     setEnableTopicNaming: (state, action: PayloadAction<boolean>) => {
       state.enableTopicNaming = action.payload
+    },
+    setShowMinappIcon: (state, action: PayloadAction<boolean>) => {
+      state.showMinappIcon = action.payload
+    },
+    setShowFilesIcon: (state, action: PayloadAction<boolean>) => {
+      state.showFilesIcon = action.payload
     }
   }
 })
@@ -219,7 +230,9 @@ export const {
   setCodeStyle,
   setTranslateModelPrompt,
   setAutoTranslateWithSpace,
-  setEnableTopicNaming
+  setEnableTopicNaming,
+  setShowMinappIcon,
+  setShowFilesIcon
 } = settingsSlice.actions
 
 export default settingsSlice.reducer
