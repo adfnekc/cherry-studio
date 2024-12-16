@@ -108,7 +108,7 @@ export async function estimateHistoryTokens(assistant: Assistant, msgs: Message[
   const uasageTokens = messages
     .filter((m) => m.usage)
     .reduce((acc, message) => {
-      const inputTokens = message.usage?.total_tokens ?? 0
+      const inputTokens = message.usage?.prompt_tokens ?? 0
       const outputTokens = message.usage!.completion_tokens ?? 0
       return acc + (message.role === 'user' ? inputTokens : outputTokens)
     }, 0)

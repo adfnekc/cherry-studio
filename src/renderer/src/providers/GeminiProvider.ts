@@ -9,6 +9,7 @@ import {
   TextPart
 } from '@google/generative-ai'
 import { SUMMARIZE_PROMPT } from '@renderer/config/prompts'
+import { CompletionsParams } from '@renderer/providers'
 import { getAssistantSettings, getDefaultModel, getTopNamingModel } from '@renderer/services/AssistantService'
 import { EVENT_NAMES } from '@renderer/services/EventService'
 import { filterContextMessages } from '@renderer/services/MessagesService'

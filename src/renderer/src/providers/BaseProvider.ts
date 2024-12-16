@@ -1,4 +1,5 @@
 import { getOllamaKeepAliveTime } from '@renderer/hooks/useOllama'
+import { CompletionsParams } from '@renderer/providers'
 import { Assistant, Message, Provider, Suggestion } from '@renderer/types'
 import { delay } from '@renderer/utils'
 import OpenAI from 'openai'

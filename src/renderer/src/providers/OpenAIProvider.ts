@@ -1,5 +1,6 @@
 import { isSupportedModel, isVisionModel } from '@renderer/config/models'
 import { SUMMARIZE_PROMPT } from '@renderer/config/prompts'
+import { CompletionsParams } from '@renderer/providers'
 import { getAssistantSettings, getDefaultModel, getTopNamingModel } from '@renderer/services/AssistantService'
 import { EVENT_NAMES } from '@renderer/services/EventService'
 import { filterContextMessages } from '@renderer/services/MessagesService'
@@ -143,33 +144,35 @@ export default class OpenAIProvider extends BaseProvider {
     const start_time_millsec = new Date().getTime()
 
     // @ts-ignore key is not typed
-    const stream = await this.sdk.chat.completions.create({
-      model: model.id,
-      messages: [isOpenAIo1 ? undefined : systemMessage, ...userMessages].filter(
-        Boolean
-      ) as ChatCompletionMessageParam[],
-      temperature: isOpenAIo1 ? 1 : assistant?.settings?.temperature,
-      top_p: assistant?.settings?.topP,
-      max_tokens: maxTokens,
-      keep_alive: this.keepAliveTime,
-      stream: isSupportStreamOutput
-    }, {
-      headers: { "Range": "" }
-    })
+    const stream = await this.sdk.chat.completions.create(
+      {
+        model: model.id,
+        messages: [isOpenAIo1 ? undefined : systemMessage, ...userMessages].filter(
+          Boolean
+        ) as ChatCompletionMessageParam[],
+        temperature: isOpenAIo1 ? 1 : assistant?.settings?.temperature,
+        top_p: assistant?.settings?.topP,
+        max_tokens: maxTokens,
+        keep_alive: this.keepAliveTime,
+        stream: isSupportStreamOutput
+      },
+      {
+        headers: { Range: '' }
+      }
+    )
 
     if (!isSupportStreamOutput) {
-      let time_completion_millsec = new Date().getTime() - start_time_millsec
+      const time_completion_millsec = new Date().getTime() - start_time_millsec
       return onChunk({
         text: stream.choices[0].message?.content || '',
         usage: stream.usage,
         metrics: {
-          completion_tokens: stream.usage?.completion_tokens,
+          completion_tokens: stream.usage?.completion_tokens || 0,
           time_completion_millsec: time_completion_millsec,
-          time_first_token_sec: 0,
+          time_first_token_millsec: 0
         }
       })
     }
-
 
     for await (const chunk of stream) {
       if (window.keyv.get(EVENT_NAMES.CHAT_COMPLETION_PAUSED)) {
@@ -178,14 +181,14 @@ export default class OpenAIProvider extends BaseProvider {
       if (time_first_token_millsec == 0) {
         time_first_token_millsec = new Date().getTime() - start_time_millsec
       }
-      let time_completion_millsec = new Date().getTime() - start_time_millsec
+      const time_completion_millsec = new Date().getTime() - start_time_millsec
       onChunk({
         text: chunk.choices[0]?.delta?.content || '',
         usage: chunk.usage,
         metrics: {
-          completion_tokens: chunk.usage?.completion_tokens,
+          completion_tokens: chunk.usage?.completion_tokens || 0,
           time_completion_millsec: time_completion_millsec,
-          time_first_token_millsec: time_first_token_millsec,
+          time_first_token_millsec: time_first_token_millsec
         }
       })
     }

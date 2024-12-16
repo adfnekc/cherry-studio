@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { MessageCreateParamsNonStreaming, MessageParam } from '@anthropic-ai/sdk/resources'
 import { DEFAULT_MAX_TOKENS } from '@renderer/config/constant'
 import { SUMMARIZE_PROMPT } from '@renderer/config/prompts'
+import { CompletionsParams } from '@renderer/providers'
 import { getAssistantSettings, getDefaultModel, getTopNamingModel } from '@renderer/services/AssistantService'
 import { EVENT_NAMES } from '@renderer/services/EventService'
 import { filterContextMessages } from '@renderer/services/MessagesService'
@@ -86,7 +87,11 @@ export default class AnthropicProvider extends BaseProvider {
       const message = await this.sdk.messages.create({ ...body, stream: false })
       return onChunk({
         text: message.content[0].type === 'text' ? message.content[0].text : '',
-        usage: message.usage
+        usage: {
+          prompt_tokens: message.usage.input_tokens,
+          completion_tokens: message.usage.output_tokens,
+          total_tokens: message.usage.input_tokens + message.usage.output_tokens
+        }
       })
     }
 

@@ -1,4 +1,3 @@
-import OpenAI from 'openai'
 import { BuiltinTheme } from 'shiki'
 
 export type Assistant = {
@@ -46,15 +45,21 @@ export type Message = {
   modelId?: string
   files?: FileType[]
   images?: string[]
-  usage?: OpenAI.Completions.CompletionUsage
+  usage?: Usage
   metrics?: Metrics
   type: 'text' | '@' | 'clear'
   isPreset?: boolean
 }
 
+export type Usage = {
+  completion_tokens: number
+  prompt_tokens: number
+  total_tokens: number
+}
+
 export type Metrics = {
-  completion_tokens?: number
-  time_completion_millsec?: number
+  completion_tokens: number
+  time_completion_millsec: number
   time_first_token_millsec?: number
 }
 

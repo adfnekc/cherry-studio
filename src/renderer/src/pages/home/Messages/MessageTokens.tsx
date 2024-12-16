@@ -29,8 +29,12 @@ const MessgeTokens: React.FC<{ message: Message; isLastMessage: boolean }> = ({ 
   if (message.role === 'assistant') {
     return (
       <MessageMetadata className="message-tokens" onClick={locateMessage}>
-        {message?.metrics?.time_first_token_millsec ? `${message?.metrics?.time_first_token_millsec}ms to first token • ` : " "}
-        {message?.metrics?.time_completion_millsec ? `${(message?.metrics?.completion_tokens / (message?.metrics?.time_completion_millsec / 1000)).toFixed(2)} tok/sec • ` : " "}
+        {message?.metrics?.time_first_token_millsec
+          ? `${message?.metrics?.time_first_token_millsec}ms to first token • `
+          : ' '}
+        {message?.metrics?.time_completion_millsec
+          ? `${(message?.metrics?.completion_tokens / (message?.metrics?.time_completion_millsec / 1000)).toFixed(2)} tok/sec • `
+          : ' '}
         Tokens: {message?.usage?.total_tokens} ↑ {message?.usage?.prompt_tokens} ↓ {message?.usage?.completion_tokens}
       </MessageMetadata>
     )

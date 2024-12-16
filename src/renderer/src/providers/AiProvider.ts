@@ -1,3 +1,4 @@
+import { CompletionsParams } from '@renderer/providers'
 import BaseProvider from '@renderer/providers/BaseProvider'
 import ProviderFactory from '@renderer/providers/ProviderFactory'
 import { Assistant, Message, Provider, Suggestion } from '@renderer/types'

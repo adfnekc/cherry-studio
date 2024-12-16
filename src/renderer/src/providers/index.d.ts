@@ -1,14 +1,15 @@
-import { Metrics } from "@renderer/types"
+import { Metrics } from '@renderer/types'
+import { Assistant, Message, Usage } from '@renderer/types'
 
 interface ChunkCallbackData {
   text?: string
-  usage?: OpenAI.Completions.CompletionUsage
+  usage?: Usage
   metrics?: Metrics
 }
 
 interface CompletionsParams {
   messages: Message[]
   assistant: Assistant
-  onChunk: ({ text, usage }: ChunkCallbackData) => void
+  onChunk: (ChunkCallbackData) => void
   onFilterMessages: (messages: Message[]) => void
 }
