@@ -1,4 +1,4 @@
-import { GithubOutlined, TwitterOutlined } from '@ant-design/icons'
+import { GithubOutlined, XOutlined } from '@ant-design/icons'
 import { FileProtectOutlined, GlobalOutlined, MailOutlined, SendOutlined, SoundOutlined } from '@ant-design/icons'
 import IndicatorLight from '@renderer/components/IndicatorLight'
 import { HStack } from '@renderer/components/Layout'
@@ -10,6 +10,7 @@ import { useSettings } from '@renderer/hooks/useSettings'
 import { useAppDispatch } from '@renderer/store'
 import { setUpdateState } from '@renderer/store/runtime'
 import { setManualUpdateCheck } from '@renderer/store/settings'
+import { ThemeMode } from '@renderer/types'
 import { compareVersions, runAsyncFunction } from '@renderer/utils'
 import { Avatar, Button, Progress, Row, Switch, Tag } from 'antd'
 import { debounce } from 'lodash'
@@ -54,7 +55,7 @@ const AboutSettings: FC = () => {
   }
 
   const mailto = async () => {
-    const email = 'kangfenmao@qq.com'
+    const email = 'support@cherry-ai.com'
     const subject = `${APP_NAME} Feedback`
     const version = (await window.api.getAppInfo()).version
     const platform = window.electron.process.platform
@@ -67,6 +68,15 @@ const AboutSettings: FC = () => {
     MinApp.start({
       name: t('settings.about.license.title'),
       url: `file://${appPath}/resources/cherry-studio/license.html`,
+      logo: AppLogo
+    })
+  }
+
+  const showReleases = async () => {
+    const { appPath } = await window.api.getAppInfo()
+    MinApp.start({
+      name: t('settings.about.releases.title'),
+      url: `file://${appPath}/resources/cherry-studio/releases.html?theme=${theme === ThemeMode.dark ? 'dark' : 'light'}`,
       logo: AppLogo
     })
   }
@@ -158,16 +168,7 @@ const AboutSettings: FC = () => {
             <SoundOutlined />
             {t('settings.about.releases.title')}
           </SettingRowTitle>
-          <Button
-            onClick={() =>
-              MinApp.start({
-                name: t('settings.about.releases.title'),
-                url: 'https://github.com/kangfenmao/cherry-studio/releases',
-                logo: AppLogo
-              })
-            }>
-            {t('settings.about.releases.button')}
-          </Button>
+          <Button onClick={showReleases}>{t('settings.about.releases.button')}</Button>
         </SettingRow>
         <SettingDivider />
         <SettingRow>
@@ -208,7 +209,7 @@ const AboutSettings: FC = () => {
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>
-            <TwitterOutlined />X
+            <XOutlined />X
           </SettingRowTitle>
           <Button onClick={() => onOpenWebsite('https://x.com/kangfenmao')}>
             {t('settings.about.website.button')}

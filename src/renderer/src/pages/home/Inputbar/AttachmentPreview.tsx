@@ -16,9 +16,9 @@ const AttachmentPreview: FC<Props> = ({ files, setFiles }) => {
   }
 
   return (
-    <Container>
+    <ContentContainer>
       <Upload
-        listType="picture-card"
+        listType={files.length > 20 ? 'text' : 'picture-card'}
         fileList={files.map((file) => ({
           uid: file.id,
           url: 'file://' + FileManager.getSafePath(file),
@@ -27,17 +27,15 @@ const AttachmentPreview: FC<Props> = ({ files, setFiles }) => {
         }))}
         onRemove={(item) => setFiles(files.filter((file) => item.uid !== file.id))}
       />
-    </Container>
+    </ContentContainer>
   )
 }
 
-const Container = styled.div`
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-  padding: 10px 20px;
-  background: var(--color-background);
-  border-top: 1px solid var(--color-border-mute);
+const ContentContainer = styled.div`
+  max-height: 40vh;
+  overflow-y: auto;
+  width: 100%;
+  padding: 10px 15px 0;
 `
 
 export default AttachmentPreview

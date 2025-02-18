@@ -4,6 +4,7 @@ import { TextAreaProps } from 'antd/lib/input'
 import { TextAreaRef } from 'antd/lib/input/TextArea'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import styled from 'styled-components'
 
 import { TopView } from '../TopView'
 
@@ -11,13 +12,14 @@ interface ShowParams {
   text: string
   textareaProps?: TextAreaProps
   modalProps?: ModalProps
+  children?: (props: { onOk?: () => void; onCancel?: () => void }) => React.ReactNode
 }
 
 interface Props extends ShowParams {
   resolve: (data: any) => void
 }
 
-const PopupContainer: React.FC<Props> = ({ text, textareaProps, modalProps, resolve }) => {
+const PopupContainer: React.FC<Props> = ({ text, textareaProps, modalProps, resolve, children }) => {
   const [open, setOpen] = useState(true)
   const { t } = useTranslation()
   const [textValue, setTextValue] = useState(text)
@@ -49,6 +51,17 @@ const PopupContainer: React.FC<Props> = ({ text, textareaProps, modalProps, reso
     setTimeout(resizeTextArea, 0)
   }, [])
 
+  const handleAfterOpenChange = (visible: boolean) => {
+    if (visible) {
+      const textArea = textareaRef.current?.resizableTextArea?.textArea
+      if (textArea) {
+        textArea.focus()
+        const length = textArea.value.length
+        textArea.setSelectionRange(length, length)
+      }
+    }
+  }
+
   TextEditPopup.hide = onCancel
 
   return (
@@ -63,21 +76,28 @@ const PopupContainer: React.FC<Props> = ({ text, textareaProps, modalProps, reso
       onOk={onOk}
       onCancel={onCancel}
       afterClose={onClose}
+      afterOpenChange={handleAfterOpenChange}
       centered>
       <TextArea
         ref={textareaRef}
         rows={2}
         autoFocus
+        spellCheck={false}
         {...textareaProps}
         value={textValue}
         onInput={resizeTextArea}
         onChange={(e) => setTextValue(e.target.value)}
       />
+      <ChildrenContainer>{children && children({ onOk, onCancel })}</ChildrenContainer>
     </Modal>
   )
 }
 
 const TopViewKey = 'TextEditPopup'
+
+const ChildrenContainer = styled.div`
+  position: relative;
+`
 
 export default class TextEditPopup {
   static topviewId = 0

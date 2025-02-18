@@ -3,6 +3,7 @@ import {
   InfoCircleOutlined,
   LayoutOutlined,
   MacCommandOutlined,
+  RocketOutlined,
   SaveOutlined,
   SettingOutlined
 } from '@ant-design/icons'
@@ -15,10 +16,11 @@ import styled from 'styled-components'
 
 import AboutSettings from './AboutSettings'
 import DataSettings from './DataSettings/DataSettings'
-import DisplaySettings from './DisplaySettings'
+import DisplaySettings from './DisplaySettings/DisplaySettings'
 import GeneralSettings from './GeneralSettings'
 import ModelSettings from './ModalSettings/ModelSettings'
 import ProvidersList from './ProviderSettings'
+import QuickAssistantSettings from './QuickAssistantSettings'
 import ShortcutSettings from './ShortcutSettings'
 
 const SettingsPage: FC = () => {
@@ -68,6 +70,12 @@ const SettingsPage: FC = () => {
               {t('settings.shortcuts.title')}
             </MenuItem>
           </MenuItemLink>
+          <MenuItemLink to="/settings/quickAssistant">
+            <MenuItem className={isRoute('/settings/quickAssistant')}>
+              <RocketOutlined />
+              {t('settings.quickAssistant.title')}
+            </MenuItem>
+          </MenuItemLink>
           <MenuItemLink to="/settings/data">
             <MenuItem className={isRoute('/settings/data')}>
               <SaveOutlined />
@@ -88,6 +96,7 @@ const SettingsPage: FC = () => {
             <Route path="general/*" element={<GeneralSettings />} />
             <Route path="display" element={<DisplaySettings />} />
             <Route path="data/*" element={<DataSettings />} />
+            <Route path="quickAssistant" element={<QuickAssistantSettings />} />
             <Route path="shortcut" element={<ShortcutSettings />} />
             <Route path="about" element={<AboutSettings />} />
           </Routes>
@@ -132,7 +141,7 @@ const MenuItem = styled.li`
   padding: 6px 10px;
   width: 100%;
   cursor: pointer;
-  border-radius: 16px;
+  border-radius: var(--list-item-border-radius);
   font-weight: 500;
   transition: all 0.2s ease-in-out;
   border: 0.5px solid transparent;

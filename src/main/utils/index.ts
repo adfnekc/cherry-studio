@@ -14,3 +14,31 @@ export function getDataPath() {
   }
   return dataPath
 }
+
+export function getInstanceName(baseURL: string) {
+  try {
+    return new URL(baseURL).host.split('.')[0]
+  } catch (error) {
+    return ''
+  }
+}
+
+export function debounce(func: (...args: any[]) => void, wait: number, immediate: boolean = false) {
+  let timeout: NodeJS.Timeout | null = null
+  return function (...args: any[]) {
+    if (timeout) clearTimeout(timeout)
+    if (immediate) {
+      func(...args)
+    } else {
+      timeout = setTimeout(() => func(...args), wait)
+    }
+  }
+}
+
+export function dumpPersistState() {
+  const persistState = JSON.parse(localStorage.getItem('persist:cherry-studio') || '{}')
+  for (const key in persistState) {
+    persistState[key] = JSON.parse(persistState[key])
+  }
+  return JSON.stringify(persistState)
+}

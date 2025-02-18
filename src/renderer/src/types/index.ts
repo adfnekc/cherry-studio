@@ -5,6 +5,7 @@ export type Assistant = {
   id: string
   name: string
   prompt: string
+  knowledge_bases?: KnowledgeBase[]
   topics: Topic[]
   type: string
   emoji?: string
@@ -21,6 +22,12 @@ export type AssistantMessage = {
   content: string
 }
 
+export type AssistantSettingCustomParameters = {
+  name: string
+  value: string | number | boolean | object
+  type: 'string' | 'number' | 'boolean' | 'json'
+}
+
 export type AssistantSettings = {
   contextCount: number
   temperature: number
@@ -29,7 +36,9 @@ export type AssistantSettings = {
   enableMaxTokens: boolean
   streamOutput: boolean
   hideMessages: boolean
-  autoResetModel: boolean
+  defaultModel?: Model
+  customParameters?: AssistantSettingCustomParameters[]
+  reasoning_effort?: 'low' | 'medium' | 'high'
 }
 
 export type Agent = Omit<Assistant, 'model'>
@@ -39,23 +48,37 @@ export type Message = {
   assistantId: string
   role: 'user' | 'assistant'
   content: string
+  reasoning_content?: string
   translatedContent?: string
   topicId: string
   createdAt: string
   status: 'sending' | 'pending' | 'success' | 'paused' | 'error'
   modelId?: string
+  model?: Model
   files?: FileType[]
   images?: string[]
   usage?: OpenAI.Completions.CompletionUsage
   metrics?: Metrics
+  knowledgeBaseIds?: string[]
   type: 'text' | '@' | 'clear'
   isPreset?: boolean
+  mentions?: Model[]
+  metadata?: {
+    // Gemini
+    groundingMetadata?: any
+    // Perplexity
+    citations?: string[]
+  }
+  askId?: string
+  useful?: boolean
+  error?: Record<string, any>
 }
 
 export type Metrics = {
   completion_tokens?: number
   time_completion_millsec?: number
   time_first_token_millsec?: number
+  time_thinking_millsec?: number
 }
 
 export type Topic = {
@@ -65,6 +88,8 @@ export type Topic = {
   createdAt: string
   updatedAt: string
   messages: Message[]
+  pinned?: boolean
+  prompt?: string
 }
 
 export type User = {
@@ -86,9 +111,9 @@ export type Provider = {
   isSystem?: boolean
 }
 
-export type ProviderType = 'openai' | 'anthropic' | 'gemini'
+export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'qwenlm' | 'azure-openai'
 
-export type ModelType = 'text' | 'vision'
+export type ModelType = 'text' | 'vision' | 'embedding' | 'reasoning'
 
 export type Model = {
   id: string
@@ -106,6 +131,7 @@ export type Suggestion = {
 
 export interface Painting {
   id: string
+  model?: string
   urls: string[]
   files: FileType[]
   prompt?: string
@@ -115,15 +141,16 @@ export interface Painting {
   seed?: string
   steps?: number
   guidanceScale?: number
-  model?: string
+  promptEnhancement?: boolean
 }
 
 export type MinAppType = {
   id?: string | number
   name: string
-  logo: string
+  logo?: string
   url: string
   bodered?: boolean
+  background?: string
 }
 
 export interface FileType {
@@ -153,7 +180,11 @@ export enum ThemeMode {
   dark = 'dark',
   auto = 'auto'
 }
-export type LanguageVarious = 'zh-CN' | 'zh-TW' | 'en-US' | 'ru-RU'
+
+export type LanguageVarious = 'zh-CN' | 'zh-TW' | 'en-US' | 'ru-RU' | 'ja-JP'
+
+export type TranslateLanguageVarious = 'chinese' | 'chinese-traditional' | 'english' | 'japanese' | 'russian'
+
 export type CodeStyleVarious = BuiltinTheme | 'auto'
 
 export type WebDavConfig = {
@@ -168,6 +199,7 @@ export type AppInfo = {
   isPackaged: boolean
   appPath: string
   appDataPath: string
+  resourcesPath: string
   filesPath: string
   logsPath: string
 }
@@ -179,3 +211,64 @@ export interface Shortcut {
   enabled: boolean
   system: boolean
 }
+
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+export type KnowledgeItemType = 'file' | 'url' | 'note' | 'sitemap' | 'directory'
+
+export type KnowledgeItem = {
+  id: string
+  baseId?: string
+  uniqueId?: string
+  uniqueIds?: string[]
+  type: KnowledgeItemType
+  content: string | FileType
+  created_at: number
+  updated_at: number
+  processingStatus?: ProcessingStatus
+  processingProgress?: number
+  processingError?: string
+  retryCount?: number
+}
+
+export interface KnowledgeBase {
+  id: string
+  name: string
+  model: Model
+  dimensions: number
+  description?: string
+  items: KnowledgeItem[]
+  created_at: number
+  updated_at: number
+  version: number
+  documentCount?: number
+  chunkSize?: number
+  chunkOverlap?: number
+  threshold?: number
+}
+
+export type KnowledgeBaseParams = {
+  id: string
+  model: string
+  dimensions: number
+  apiKey: string
+  apiVersion?: string
+  baseURL: string
+  chunkSize?: number
+  chunkOverlap?: number
+}
+
+export type GenerateImageParams = {
+  model: string
+  prompt: string
+  negativePrompt?: string
+  imageSize: string
+  batchSize: number
+  seed?: string
+  numInferenceSteps: number
+  guidanceScale: number
+  signal?: AbortSignal
+  promptEnhancement?: boolean
+}
+
+export type SidebarIcon = 'assistants' | 'agents' | 'paintings' | 'translate' | 'minapp' | 'knowledge' | 'files'

@@ -3,6 +3,8 @@ import {
   DeleteOutlined,
   EditOutlined,
   ForkOutlined,
+  LikeFilled,
+  LikeOutlined,
   MenuOutlined,
   QuestionCircleOutlined,
   SaveOutlined,
@@ -11,12 +13,16 @@ import {
 } from '@ant-design/icons'
 import SelectModelPopup from '@renderer/components/Popups/SelectModelPopup'
 import TextEditPopup from '@renderer/components/Popups/TextEditPopup'
+import { TranslateLanguageOptions } from '@renderer/config/translate'
+import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import { resetAssistantMessage } from '@renderer/services/MessagesService'
 import { translateText } from '@renderer/services/TranslateService'
 import { Message, Model } from '@renderer/types'
-import { removeTrailingDoubleSpaces } from '@renderer/utils'
-import { Dropdown, Popconfirm, Tooltip } from 'antd'
+import { removeTrailingDoubleSpaces, uuid } from '@renderer/utils'
+import { Button, Dropdown, Popconfirm, Tooltip } from 'antd'
 import dayjs from 'dayjs'
+import { isEmpty } from 'lodash'
 import { FC, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -26,48 +32,47 @@ interface Props {
   assistantModel?: Model
   model?: Model
   index?: number
+  isGrouped?: boolean
   isLastMessage: boolean
   isAssistantMessage: boolean
   setModel: (model: Model) => void
   onEditMessage?: (message: Message) => void
-  onDeleteMessage?: (message: Message) => void
+  onDeleteMessage?: (message: Message) => Promise<void>
+  onGetMessages?: () => Message[]
 }
 
 const MessageMenubar: FC<Props> = (props) => {
   const {
     message,
     index,
+    isGrouped,
     model,
     isLastMessage,
     isAssistantMessage,
     assistantModel,
-    setModel,
     onEditMessage,
-    onDeleteMessage
+    onDeleteMessage,
+    onGetMessages
   } = props
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [isTranslating, setIsTranslating] = useState(false)
 
   const isUserMessage = message.role === 'user'
-  const canRegenerate = isLastMessage && isAssistantMessage
 
-  const onCopy = useCallback(() => {
-    navigator.clipboard.writeText(removeTrailingDoubleSpaces(message.content))
-    window.message.success({ content: t('message.copied'), key: 'copy-message' })
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [message.content, t])
-
-  const onRegenerate = useCallback(
-    (model: Model) => {
-      setModel(model)
-      setTimeout(() => EventEmitter.emit(EVENT_NAMES.REGENERATE_MESSAGE, model), 100)
+  const onCopy = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      navigator.clipboard.writeText(removeTrailingDoubleSpaces(message.content))
+      window.message.success({ content: t('message.copied'), key: 'copy-message' })
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     },
-    [setModel]
+    [message.content, t]
   )
 
-  const onNewBranch = useCallback(() => {
+  const onNewBranch = useCallback(async () => {
+    await modelGenerating()
     EventEmitter.emit(EVENT_NAMES.NEW_BRANCH, index)
     window.message.success({
       content: t('chat.message.new.branch.created'),
@@ -75,10 +80,71 @@ const MessageMenubar: FC<Props> = (props) => {
     })
   }, [index, t])
 
+  const onResend = useCallback(async () => {
+    await modelGenerating()
+    const _messages = onGetMessages?.() || []
+    const groupdMessages = _messages.filter((m) => m.askId === message.id)
+
+    // Resend all groupd messages
+    if (!isEmpty(groupdMessages)) {
+      for (const assistantMessage of groupdMessages) {
+        const _model = assistantMessage.model || assistantModel
+        EventEmitter.emit(
+          EVENT_NAMES.RESEND_MESSAGE + ':' + assistantMessage.id,
+          resetAssistantMessage(assistantMessage, _model)
+        )
+      }
+      return
+    }
+
+    // If there is no groupd message, resend next message
+    const index = _messages.findIndex((m) => m.id === message.id)
+    const nextIndex = index + 1
+    const nextMessage = _messages[nextIndex]
+
+    if (nextMessage && nextMessage.role === 'assistant') {
+      EventEmitter.emit(EVENT_NAMES.RESEND_MESSAGE + ':' + nextMessage.id, {
+        ...nextMessage,
+        content: '',
+        status: 'sending',
+        model: assistantModel || model,
+        translatedContent: undefined
+      })
+    }
+
+    // If next message is not exist or next message role is user, delete current message and resend
+    if (!nextMessage || nextMessage.role === 'user') {
+      EventEmitter.emit(EVENT_NAMES.SEND_MESSAGE, { ...message, id: uuid() })
+      onDeleteMessage?.(message)
+    }
+  }, [assistantModel, message, model, onDeleteMessage, onGetMessages])
+
   const onEdit = useCallback(async () => {
-    const editedText = await TextEditPopup.show({ text: message.content })
-    editedText && onEditMessage?.({ ...message, content: editedText })
-  }, [message, onEditMessage])
+    let resendMessage = false
+
+    const editedText = await TextEditPopup.show({
+      text: message.content,
+      children: (props) => {
+        const onPress = () => {
+          props.onOk?.()
+          resendMessage = true
+        }
+        return message.role === 'user' ? (
+          <ReSendButton
+            icon={<i className="iconfont icon-ic_send" style={{ color: 'var(--color-primary)' }} />}
+            onClick={onPress}>
+            {t('chat.resend')}
+          </ReSendButton>
+        ) : null
+      }
+    })
+
+    if (editedText) {
+      await onEditMessage?.({ ...message, content: editedText })
+    }
+
+    resendMessage && onResend()
+  }, [message, onEditMessage, onResend, t])
 
   const handleTranslate = useCallback(
     async (language: string) => {
@@ -89,8 +155,9 @@ const MessageMenubar: FC<Props> = (props) => {
       setIsTranslating(true)
 
       try {
-        const translatedText = await translateText(message.content, language)
-        onEditMessage?.({ ...message, translatedContent: translatedText })
+        await translateText(message.content, language, (text) =>
+          onEditMessage?.({ ...message, translatedContent: text })
+        )
       } catch (error) {
         console.error('Translation failed:', error)
         window.message.error({
@@ -123,70 +190,50 @@ const MessageMenubar: FC<Props> = (props) => {
         onClick: onEdit
       },
       {
-        label: t('chat.translate'),
-        key: 'translate',
-        icon: isTranslating ? <SyncOutlined spin /> : <TranslationOutlined />,
-        children: [
-          {
-            label: '🇨🇳 ' + t('languages.chinese'),
-            key: 'translate-chinese',
-            onClick: () => handleTranslate('chinese')
-          },
-          {
-            label: '🇭🇰 ' + t('languages.chinese-traditional'),
-            key: 'translate-chinese-traditional',
-            onClick: () => handleTranslate('chinese-traditional')
-          },
-          {
-            label: '🇬🇧 ' + t('languages.english'),
-            key: 'translate-english',
-            onClick: () => handleTranslate('english')
-          },
-          {
-            label: '🇯🇵 ' + t('languages.japanese'),
-            key: 'translate-japanese',
-            onClick: () => handleTranslate('japanese')
-          },
-          {
-            label: '🇰🇷 ' + t('languages.korean'),
-            key: 'translate-korean',
-            onClick: () => handleTranslate('korean')
-          },
-          {
-            label: '🇷🇺 ' + t('languages.russian'),
-            key: 'translate-russian',
-            onClick: () => handleTranslate('russian')
-          },
-          {
-            label: '✖ ' + t('translate.close'),
-            key: 'translate-close',
-            onClick: () => onEditMessage?.({ ...message, translatedContent: undefined })
-          }
-        ]
+        label: t('chat.message.new.branch'),
+        key: 'new-branch',
+        icon: <ForkOutlined />,
+        onClick: onNewBranch
       }
     ],
-    [handleTranslate, isTranslating, message, onEdit, onEditMessage, t]
+    [message, onEdit, onNewBranch, t]
   )
 
-  const onAtModelRegenerate = async () => {
-    const selectedModel = await SelectModelPopup.show({ model })
-    selectedModel && onRegenerate(selectedModel)
+  const onRegenerate = async (e: React.MouseEvent | undefined) => {
+    e?.stopPropagation?.()
+    await modelGenerating()
+    const selectedModel = isGrouped ? model : assistantModel
+    const _message = resetAssistantMessage(message, selectedModel)
+    onEditMessage?.(_message)
   }
 
-  const onDeleteAndRegenerate = () => {
-    onEditMessage?.({
-      ...message,
-      content: '',
-      status: 'sending',
-      modelId: assistantModel?.id || model?.id,
-      translatedContent: undefined
-    })
+  const onMentionModel = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    await modelGenerating()
+    const selectedModel = await SelectModelPopup.show({ model })
+    if (!selectedModel) return
+
+    const _message: Message = resetAssistantMessage(message, selectedModel)
+
+    if (message.askId && message.model) {
+      return EventEmitter.emit(EVENT_NAMES.APPEND_MESSAGE, { ..._message, id: uuid() })
+    }
+
+    onEditMessage?.(_message)
   }
+
+  const onUseful = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onEditMessage?.({ ...message, useful: !message.useful })
+    },
+    [message, onEditMessage]
+  )
 
   return (
     <MenusBar className={`menubar ${isLastMessage && 'show'}`}>
       {message.role === 'user' && (
-        <Tooltip title="Edit" mouseEnterDelay={0.8}>
+        <Tooltip title={t('common.edit')} mouseEnterDelay={0.8}>
           <ActionButton className="message-action-button" onClick={onEdit}>
             <EditOutlined />
           </ActionButton>
@@ -204,40 +251,83 @@ const MessageMenubar: FC<Props> = (props) => {
           okButtonProps={{ danger: true }}
           destroyTooltipOnHide
           icon={<QuestionCircleOutlined style={{ color: 'red' }} />}
-          onConfirm={onDeleteAndRegenerate}>
-          <ActionButton className="message-action-button">
-            <SyncOutlined />
-          </ActionButton>
+          onConfirm={onRegenerate}>
+          <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
+            <ActionButton className="message-action-button">
+              <SyncOutlined />
+            </ActionButton>
+          </Tooltip>
         </Popconfirm>
       )}
-      {canRegenerate && (
-        <Tooltip title={t('common.regenerate')} mouseEnterDelay={0.8}>
-          <ActionButton className="message-action-button" onClick={onAtModelRegenerate}>
-            <i className="iconfont icon-at1"></i>
+      {isAssistantMessage && (
+        <Tooltip title={t('message.mention.title')} mouseEnterDelay={0.8}>
+          <ActionButton className="message-action-button" onClick={onMentionModel}>
+            <i className="iconfont icon-at" style={{ fontSize: 16 }}></i>
           </ActionButton>
         </Tooltip>
       )}
-      {isAssistantMessage && (
-        <Tooltip title={t('chat.message.new.branch')} mouseEnterDelay={0.8}>
-          <ActionButton className="message-action-button" onClick={onNewBranch}>
-            <ForkOutlined />
+      {!isUserMessage && (
+        <Dropdown
+          menu={{
+            items: [
+              ...TranslateLanguageOptions.map((item) => ({
+                label: item.emoji + ' ' + item.label,
+                key: item.value,
+                onClick: () => handleTranslate(item.value)
+              })),
+              {
+                label: '✖ ' + t('translate.close'),
+                key: 'translate-close',
+                onClick: () => onEditMessage?.({ ...message, translatedContent: undefined })
+              }
+            ],
+            onClick: (e) => e.domEvent.stopPropagation()
+          }}
+          trigger={['click']}
+          placement="topRight"
+          arrow>
+          <Tooltip title={t('chat.translate')} mouseEnterDelay={1.2}>
+            <ActionButton className="message-action-button" onClick={(e) => e.stopPropagation()}>
+              <TranslationOutlined />
+            </ActionButton>
+          </Tooltip>
+        </Dropdown>
+      )}
+      {isAssistantMessage && isGrouped && (
+        <Tooltip title={t('chat.message.useful')} mouseEnterDelay={0.8}>
+          <ActionButton className="message-action-button" onClick={onUseful}>
+            {message.useful ? <LikeFilled /> : <LikeOutlined />}
           </ActionButton>
         </Tooltip>
       )}
       <Popconfirm
+        disabled={isGrouped}
         title={t('message.message.delete.content')}
         okButtonProps={{ danger: true }}
         icon={<QuestionCircleOutlined style={{ color: 'red' }} />}
         onConfirm={() => onDeleteMessage?.(message)}>
         <Tooltip title={t('common.delete')} mouseEnterDelay={1}>
-          <ActionButton className="message-action-button">
+          <ActionButton
+            className="message-action-button"
+            onClick={
+              isGrouped
+                ? (e) => {
+                    e.stopPropagation()
+                    onDeleteMessage?.(message)
+                  }
+                : (e) => e.stopPropagation()
+            }>
             <DeleteOutlined />
           </ActionButton>
         </Tooltip>
       </Popconfirm>
       {!isUserMessage && (
-        <Dropdown menu={{ items: dropdownItems }} trigger={['click']} placement="topRight" arrow>
-          <ActionButton className="message-action-button">
+        <Dropdown
+          menu={{ items: dropdownItems, onClick: (e) => e.domEvent.stopPropagation() }}
+          trigger={['click']}
+          placement="topRight"
+          arrow>
+          <ActionButton className="message-action-button" onClick={(e) => e.stopPropagation()}>
             <MenuOutlined />
           </ActionButton>
         </Dropdown>
@@ -280,9 +370,15 @@ const ActionButton = styled.div`
   &:hover {
     color: var(--color-text-1);
   }
-  .icon-at1 {
+  .icon-at {
     font-size: 16px;
   }
+`
+
+const ReSendButton = styled(Button)`
+  position: absolute;
+  top: 10px;
+  left: 0;
 `
 
 export default MessageMenubar

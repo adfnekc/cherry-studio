@@ -53,7 +53,7 @@ const ProvidersList: FC = () => {
   }
 
   const getDropdownMenus = (provider: Provider): MenuProps['items'] => {
-    return [
+    const menus = [
       {
         label: t('common.edit'),
         key: 'edit',
@@ -83,6 +83,16 @@ const ProvidersList: FC = () => {
         }
       }
     ]
+
+    if (providers.filter((p) => p.id === provider.id).length > 1) {
+      return menus
+    }
+
+    if (provider.isSystem) {
+      return []
+    }
+
+    return menus
   }
 
   return (
@@ -102,9 +112,7 @@ const ProvidersList: FC = () => {
                             {...provided.draggableProps}
                             {...provided.dragHandleProps}
                             style={{ ...provided.draggableProps.style, marginBottom: 5 }}>
-                            <Dropdown
-                              menu={{ items: provider.isSystem ? [] : getDropdownMenus(provider) }}
-                              trigger={['contextMenu']}>
+                            <Dropdown menu={{ items: getDropdownMenus(provider) }} trigger={['contextMenu']}>
                               <ProviderListItem
                                 key={JSON.stringify(provider)}
                                 className={provider.id === selectedProvider?.id ? 'active' : ''}
@@ -124,7 +132,7 @@ const ProvidersList: FC = () => {
                                   {provider.isSystem ? t(`provider.${provider.id}`) : provider.name}
                                 </ProviderItemName>
                                 {provider.enabled && (
-                                  <Tag color="green" style={{ marginLeft: 'auto', borderRadius: 16 }}>
+                                  <Tag color="green" style={{ marginLeft: 'auto', marginRight: 0, borderRadius: 16 }}>
                                     ON
                                   </Tag>
                                 )}
@@ -163,7 +171,7 @@ const Container = styled.div`
 const ProviderListContainer = styled.div`
   display: flex;
   flex-direction: column;
-  width: var(--assistants-width);
+  min-width: calc(var(--settings-width) + 10px);
   height: calc(100vh - var(--navbar-height));
   border-right: 0.5px solid var(--color-border);
 `
@@ -173,16 +181,17 @@ const ProviderList = styled.div`
   flex: 1;
   flex-direction: column;
   padding: 8px;
+  padding-right: 5px;
 `
 
 const ProviderListItem = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
-  padding: 5px 8px;
+  padding: 5px 10px;
   width: 100%;
   cursor: grab;
-  border-radius: 16px;
+  border-radius: var(--list-item-border-radius);
   font-size: 14px;
   transition: all 0.2s ease-in-out;
   border: 0.5px solid transparent;

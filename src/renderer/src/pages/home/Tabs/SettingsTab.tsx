@@ -22,13 +22,15 @@ import {
   setMathEngine,
   setMessageFont,
   setMessageStyle,
+  setMultiModelMessageStyle,
   setPasteLongTextAsFile,
   setPasteLongTextThreshold,
   setRenderInputMessageAsMarkdown,
   setShowInputEstimatedTokens,
   setShowMessageDivider
 } from '@renderer/store/settings'
-import { Assistant, AssistantSettings, ThemeMode } from '@renderer/types'
+import { Assistant, AssistantSettings, ThemeMode, TranslateLanguageVarious } from '@renderer/types'
+import { modalConfirm } from '@renderer/utils'
 import { Col, InputNumber, Row, Select, Slider, Switch, Tooltip } from 'antd'
 import { FC, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -58,13 +60,16 @@ const SettingsTab: FC<Props> = (props) => {
     showInputEstimatedTokens,
     sendMessageShortcut,
     setSendMessageShortcut,
+    targetLanguage,
+    setTargetLanguage,
     pasteLongTextAsFile,
     renderInputMessageAsMarkdown,
     codeShowLineNumbers,
     codeCollapsible,
     mathEngine,
     autoTranslateWithSpace,
-    pasteLongTextThreshold
+    pasteLongTextThreshold,
+    multiModelMessageStyle
   } = useSettings()
 
   const onUpdateAssistantSettings = (settings: Partial<AssistantSettings>) => {
@@ -102,7 +107,7 @@ const SettingsTab: FC<Props> = (props) => {
         maxTokens: DEFAULT_MAX_TOKENS,
         streamOutput: true,
         hideMessages: false,
-        autoResetModel: false
+        customParameters: []
       }
     })
   }
@@ -116,7 +121,7 @@ const SettingsTab: FC<Props> = (props) => {
   }, [assistant])
 
   return (
-    <Container>
+    <Container className="settings-tab">
       <SettingGroup style={{ marginTop: 10 }}>
         <SettingSubtitle style={{ marginTop: 0 }}>
           {t('settings.messages.model.title')}{' '}
@@ -162,7 +167,7 @@ const SettingsTab: FC<Props> = (props) => {
           </Col>
         </Row>
         <SettingRow>
-          <SettingRowTitleSmall>{t('model.stream_output')}</SettingRowTitleSmall>
+          <SettingRowTitleSmall>{t('models.stream_output')}</SettingRowTitleSmall>
           <Switch
             size="small"
             checked={streamOutput}
@@ -173,7 +178,7 @@ const SettingsTab: FC<Props> = (props) => {
           />
         </SettingRow>
         <SettingDivider />
-        <Row align="middle" justify="space-between">
+        <Row align="middle" justify="space-between" style={{ marginBottom: 10 }}>
           <HStack alignItems="center">
             <Label>{t('chat.settings.max_tokens')}</Label>
             <Tooltip title={t('chat.settings.max_tokens.tip')}>
@@ -183,25 +188,39 @@ const SettingsTab: FC<Props> = (props) => {
           <Switch
             size="small"
             checked={enableMaxTokens}
-            onChange={(enabled) => {
+            onChange={async (enabled) => {
+              if (enabled) {
+                const confirmed = await modalConfirm({
+                  title: t('chat.settings.max_tokens.confirm'),
+                  content: t('chat.settings.max_tokens.confirm_content'),
+                  okButtonProps: {
+                    danger: true
+                  }
+                })
+                if (!confirmed) return
+              }
               setEnableMaxTokens(enabled)
               onUpdateAssistantSettings({ enableMaxTokens: enabled })
             }}
           />
         </Row>
-        <Row align="middle" gutter={10}>
-          <Col span={24}>
-            <Slider
-              disabled={!enableMaxTokens}
-              min={0}
-              max={32000}
-              onChange={setMaxTokens}
-              onChangeComplete={onMaxTokensChange}
-              value={typeof maxTokens === 'number' ? maxTokens : 0}
-              step={100}
-            />
-          </Col>
-        </Row>
+        {enableMaxTokens && (
+          <Row align="middle" gutter={10}>
+            <Col span={24}>
+              <InputNumber
+                disabled={!enableMaxTokens}
+                min={0}
+                max={10000000}
+                step={100}
+                value={typeof maxTokens === 'number' ? maxTokens : 0}
+                changeOnBlur
+                onChange={(value) => value && setMaxTokens(value)}
+                onBlur={() => onMaxTokensChange(maxTokens)}
+                style={{ width: '100%' }}
+              />
+            </Col>
+          </Row>
+        )}
       </SettingGroup>
       <SettingGroup>
         <SettingSubtitle style={{ marginTop: 0 }}>{t('settings.messages.title')}</SettingSubtitle>
@@ -251,6 +270,20 @@ const SettingsTab: FC<Props> = (props) => {
             size="small">
             <Select.Option value="plain">{t('message.message.style.plain')}</Select.Option>
             <Select.Option value="bubble">{t('message.message.style.bubble')}</Select.Option>
+          </Select>
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitleSmall>{t('message.message.multi_model_style')}</SettingRowTitleSmall>
+          <Select
+            size="small"
+            value={multiModelMessageStyle}
+            onChange={(value) => dispatch(setMultiModelMessageStyle(value))}
+            style={{ width: 135 }}>
+            <Select.Option value="fold">{t('message.message.multi_model_style.fold')}</Select.Option>
+            <Select.Option value="vertical">{t('message.message.multi_model_style.vertical')}</Select.Option>
+            <Select.Option value="horizontal">{t('message.message.multi_model_style.horizontal')}</Select.Option>
+            <Select.Option value="grid">{t('message.message.multi_model_style.grid')}</Select.Option>
           </Select>
         </SettingRow>
         <SettingDivider />
@@ -363,6 +396,25 @@ const SettingsTab: FC<Props> = (props) => {
           </>
         )}
         <SettingRow>
+          <SettingRowTitleSmall>{t('settings.input.target_language')}</SettingRowTitleSmall>
+          <Select
+            defaultValue={'english' as TranslateLanguageVarious}
+            size="small"
+            value={targetLanguage}
+            menuItemSelectedIcon={<CheckOutlined />}
+            options={[
+              { value: 'chinese', label: t('settings.input.target_language.chinese') },
+              { value: 'chinese-traditional', label: t('settings.input.target_language.chinese-traditional') },
+              { value: 'english', label: t('settings.input.target_language.english') },
+              { value: 'japanese', label: t('settings.input.target_language.japanese') },
+              { value: 'russian', label: t('settings.input.target_language.russian') }
+            ]}
+            onChange={(value) => setTargetLanguage(value)}
+            style={{ width: 135 }}
+          />
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
           <SettingRowTitleSmall>{t('settings.messages.input.send_shortcuts')}</SettingRowTitleSmall>
           <Select
             size="small"
@@ -390,6 +442,7 @@ const Container = styled(Scrollbar)`
   padding: 0 10px;
   padding-right: 5px;
   padding-top: 2px;
+  padding-bottom: 10px;
 `
 
 const Label = styled.p`
@@ -409,13 +462,11 @@ const SettingRowTitleSmall = styled(SettingRowTitle)`
 `
 
 export const SettingGroup = styled.div<{ theme?: ThemeMode }>`
-  padding: 10px;
+  padding: 0 5px;
   width: 100%;
   margin-top: 0;
   border-radius: 8px;
   margin-bottom: 10px;
-  border: 0.5px solid var(--color-border);
-  background: var(--color-group-background);
 `
 
 export default SettingsTab

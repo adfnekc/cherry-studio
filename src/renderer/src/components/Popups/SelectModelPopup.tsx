@@ -1,7 +1,6 @@
 import { PushpinOutlined, SearchOutlined } from '@ant-design/icons'
-import VisionIcon from '@renderer/components/Icons/VisionIcon'
 import { TopView } from '@renderer/components/TopView'
-import { getModelLogo, isVisionModel, isWebSearchModel } from '@renderer/config/models'
+import { getModelLogo, isEmbeddingModel } from '@renderer/config/models'
 import db from '@renderer/databases'
 import { useProviders } from '@renderer/hooks/useProvider'
 import { getModelUniqId } from '@renderer/services/ModelService'
@@ -12,8 +11,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
-import WebSearchIcon from '../Icons/WebSearchIcon'
 import { HStack } from '../Layout'
+import ModelTags from '../ModelTags'
 import Scrollbar from '../Scrollbar'
 
 type MenuItem = Required<MenuProps>['items'][number]
@@ -33,6 +32,7 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
   const inputRef = useRef<InputRef>(null)
   const { providers } = useProviders()
   const [pinnedModels, setPinnedModels] = useState<string[]>([])
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const loadPinnedModels = async () => {
@@ -66,6 +66,7 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
     .filter((p) => p.models && p.models.length > 0)
     .map((p) => {
       const filteredModels = sortBy(p.models, ['group', 'name'])
+        .filter((m) => !isEmbeddingModel(m))
         .filter((m) =>
           [m.name + m.provider + t('provider.' + p.id)].join('').toLowerCase().includes(searchText.toLowerCase())
         )
@@ -73,9 +74,9 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
           key: getModelUniqId(m),
           label: (
             <ModelItem>
-              <span>
-                {m?.name} {isVisionModel(m) && <VisionIcon />} {isWebSearchModel(m) && <WebSearchIcon />}
-              </span>
+              <ModelNameRow>
+                <span>{m?.name}</span> <ModelTags model={m} />
+              </ModelNameRow>
               <PinIcon
                 onClick={(e) => {
                   e.stopPropagation()
@@ -114,10 +115,12 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
       .flatMap((p) => p.models || [])
       .filter((m) => pinnedModels.includes(getModelUniqId(m)))
       .map((m) => ({
-        key: getModelUniqId(m),
+        key: getModelUniqId(m) + '_pinned',
         label: (
           <ModelItem>
-            {m?.name} {isVisionModel(m) && <VisionIcon />}
+            <ModelNameRow>
+              <span>{m?.name}</span> <ModelTags model={m} />
+            </ModelNameRow>
             <PinIcon
               onClick={(e) => {
                 e.stopPropagation()
@@ -142,7 +145,7 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
     if (pinnedItems.length > 0) {
       filteredItems.unshift({
         key: 'pinned',
-        label: t('model.pinned'),
+        label: t('models.pinned'),
         type: 'group',
         children: pinnedItems
       } as MenuItem)
@@ -161,6 +164,17 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
   useEffect(() => {
     open && setTimeout(() => inputRef.current?.focus(), 0)
   }, [open])
+
+  useEffect(() => {
+    if (open && model) {
+      setTimeout(() => {
+        const selectedElement = document.querySelector('.ant-menu-item-selected')
+        if (selectedElement && scrollContainerRef.current) {
+          selectedElement.scrollIntoView({ block: 'center', behavior: 'auto' })
+        }
+      }, 100) // Small delay to ensure menu is rendered
+    }
+  }, [open, model])
 
   return (
     <Modal
@@ -188,7 +202,7 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
             </SearchIcon>
           }
           ref={inputRef}
-          placeholder={t('model.search')}
+          placeholder={t('models.search')}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           allowClear
@@ -199,7 +213,7 @@ const PopupContainer: React.FC<PopupContainerProps> = ({ model, resolve }) => {
         />
       </HStack>
       <Divider style={{ margin: 0, borderBlockStartWidth: 0.5 }} />
-      <Scrollbar style={{ height: '50vh' }}>
+      <Scrollbar style={{ height: '50vh' }} ref={scrollContainerRef}>
         <Container>
           {filteredItems.length > 0 ? (
             <StyledMenu
@@ -263,6 +277,13 @@ const ModelItem = styled.div`
   font-size: 14px;
   position: relative;
   width: 100%;
+`
+
+const ModelNameRow = styled.div`
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 `
 
 const EmptyState = styled.div`

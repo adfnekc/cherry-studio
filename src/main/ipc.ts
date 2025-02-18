@@ -10,9 +10,16 @@ import AppUpdater from './services/AppUpdater'
 import BackupManager from './services/BackupManager'
 import { configManager } from './services/ConfigManager'
 import { ExportService } from './services/ExportService'
+import FileService from './services/FileService'
 import FileStorage from './services/FileStorage'
+import { GeminiService } from './services/GeminiService'
+import KnowledgeService from './services/KnowledgeService'
 import { registerShortcuts, unregisterAllShortcuts } from './services/ShortcutService'
+import { TrayService } from './services/TrayService'
 import { windowService } from './services/WindowService'
+import { getResourcePath } from './utils'
+import { decrypt } from './utils/aes'
+import { encrypt } from './utils/aes'
 import { compress, decompress } from './utils/zip'
 
 const fileManager = new FileStorage()
@@ -28,6 +35,7 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
     appPath: app.getAppPath(),
     filesPath: path.join(app.getPath('userData'), 'Data', 'Files'),
     appDataPath: app.getPath('userData'),
+    resourcesPath: getResourcePath(),
     logsPath: log.transports.file.getFile().path
   }))
 
@@ -48,6 +56,16 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   // tray
   ipcMain.handle('app:set-tray', (_, isActive: boolean) => {
     configManager.setTray(isActive)
+  })
+
+  ipcMain.handle('app:restart-tray', () => TrayService.getInstance().restartTray())
+
+  ipcMain.handle('config:set', (_, key: string, value: any) => {
+    configManager.set(key, value)
+  })
+
+  ipcMain.handle('config:get', (_, key: string) => {
+    return configManager.get(key)
   })
 
   // theme
@@ -100,6 +118,7 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
 
   // file
   ipcMain.handle('file:open', fileManager.open)
+  ipcMain.handle('file:openPath', fileManager.openPath)
   ipcMain.handle('file:save', fileManager.save)
   ipcMain.handle('file:select', fileManager.selectFile)
   ipcMain.handle('file:upload', fileManager.uploadFile)
@@ -114,6 +133,10 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   ipcMain.handle('file:base64Image', fileManager.base64Image)
   ipcMain.handle('file:download', fileManager.downloadFile)
   ipcMain.handle('file:copy', fileManager.copyFile)
+  ipcMain.handle('file:binaryFile', fileManager.binaryFile)
+
+  // fs
+  ipcMain.handle('fs:read', FileService.readFile)
 
   // minapp
   ipcMain.handle('minapp', (_, args) => {
@@ -144,4 +167,44 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
       registerShortcuts(mainWindow)
     }
   })
+
+  // knowledge base
+  ipcMain.handle('knowledge-base:create', KnowledgeService.create)
+  ipcMain.handle('knowledge-base:reset', KnowledgeService.reset)
+  ipcMain.handle('knowledge-base:delete', KnowledgeService.delete)
+  ipcMain.handle('knowledge-base:add', KnowledgeService.add)
+  ipcMain.handle('knowledge-base:remove', KnowledgeService.remove)
+  ipcMain.handle('knowledge-base:search', KnowledgeService.search)
+
+  // window
+  ipcMain.handle('window:set-minimum-size', (_, width: number, height: number) => {
+    mainWindow?.setMinimumSize(width, height)
+  })
+
+  ipcMain.handle('window:reset-minimum-size', () => {
+    mainWindow?.setMinimumSize(1080, 600)
+    const [width, height] = mainWindow?.getSize() ?? [1080, 600]
+    if (width < 1080) {
+      mainWindow?.setSize(1080, height)
+    }
+  })
+
+  // gemini
+  ipcMain.handle('gemini:upload-file', GeminiService.uploadFile)
+  ipcMain.handle('gemini:base64-file', GeminiService.base64File)
+  ipcMain.handle('gemini:retrieve-file', GeminiService.retrieveFile)
+  ipcMain.handle('gemini:list-files', GeminiService.listFiles)
+  ipcMain.handle('gemini:delete-file', GeminiService.deleteFile)
+
+  // mini window
+  ipcMain.handle('miniwindow:show', () => windowService.showMiniWindow())
+  ipcMain.handle('miniwindow:hide', () => windowService.hideMiniWindow())
+  ipcMain.handle('miniwindow:close', () => windowService.closeMiniWindow())
+  ipcMain.handle('miniwindow:toggle', () => windowService.toggleMiniWindow())
+
+  // aes
+  ipcMain.handle('aes:encrypt', (_, text: string, secretKey: string, iv: string) => encrypt(text, secretKey, iv))
+  ipcMain.handle('aes:decrypt', (_, encryptedData: string, iv: string, secretKey: string) =>
+    decrypt(encryptedData, iv, secretKey)
+  )
 }

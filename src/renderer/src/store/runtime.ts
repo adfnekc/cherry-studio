@@ -10,13 +10,26 @@ export interface UpdateState {
   available: boolean
 }
 
+export interface WebDAVSyncState {
+  lastSyncTime: number | null
+  syncing: boolean
+  lastSyncError: string | null
+}
+
 export interface RuntimeState {
   avatar: string
   generating: boolean
   minappShow: boolean
   searching: boolean
   filesPath: string
+  resourcesPath: string
   update: UpdateState
+  webdavSync: WebDAVSyncState
+  export: ExportState
+}
+
+export interface ExportState {
+  isExporting: boolean
 }
 
 const initialState: RuntimeState = {
@@ -25,12 +38,21 @@ const initialState: RuntimeState = {
   minappShow: false,
   searching: false,
   filesPath: '',
+  resourcesPath: '',
   update: {
     info: null,
     checking: false,
     downloading: false,
     downloadProgress: 0,
     available: false
+  },
+  webdavSync: {
+    lastSyncTime: null,
+    syncing: false,
+    lastSyncError: null
+  },
+  export: {
+    isExporting: false
   }
 }
 
@@ -53,13 +75,31 @@ const runtimeSlice = createSlice({
     setFilesPath: (state, action: PayloadAction<string>) => {
       state.filesPath = action.payload
     },
+    setResourcesPath: (state, action: PayloadAction<string>) => {
+      state.resourcesPath = action.payload
+    },
     setUpdateState: (state, action: PayloadAction<Partial<UpdateState>>) => {
       state.update = { ...state.update, ...action.payload }
+    },
+    setWebDAVSyncState: (state, action: PayloadAction<Partial<WebDAVSyncState>>) => {
+      state.webdavSync = { ...state.webdavSync, ...action.payload }
+    },
+    setExportState: (state, action: PayloadAction<Partial<ExportState>>) => {
+      state.export = { ...state.export, ...action.payload }
     }
   }
 })
 
-export const { setAvatar, setGenerating, setMinappShow, setSearching, setFilesPath, setUpdateState } =
-  runtimeSlice.actions
+export const {
+  setAvatar,
+  setGenerating,
+  setMinappShow,
+  setSearching,
+  setFilesPath,
+  setResourcesPath,
+  setUpdateState,
+  setWebDAVSyncState,
+  setExportState
+} = runtimeSlice.actions
 
 export default runtimeSlice.reducer

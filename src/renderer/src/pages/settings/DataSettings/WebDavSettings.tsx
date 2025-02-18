@@ -1,15 +1,19 @@
-import { FolderOpenOutlined, SaveOutlined } from '@ant-design/icons'
+import { FolderOpenOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons'
 import { HStack } from '@renderer/components/Layout'
+import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
-import { backupToWebdav, restoreFromWebdav } from '@renderer/services/BackupService'
+import { backupToWebdav, restoreFromWebdav, startAutoSync, stopAutoSync } from '@renderer/services/BackupService'
 import { useAppDispatch } from '@renderer/store'
 import {
+  setWebdavAutoSync,
   setWebdavHost as _setWebdavHost,
   setWebdavPass as _setWebdavPass,
   setWebdavPath as _setWebdavPath,
+  setWebdavSyncInterval as _setWebdavSyncInterval,
   setWebdavUser as _setWebdavUser
 } from '@renderer/store/settings'
-import { Button, Input } from 'antd'
+import { Button, Input, Select } from 'antd'
+import dayjs from 'dayjs'
 import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -20,7 +24,8 @@ const WebDavSettings: FC = () => {
     webdavHost: webDAVHost,
     webdavUser: webDAVUser,
     webdavPass: webDAVPass,
-    webdavPath: webDAVPath
+    webdavPath: webDAVPath,
+    webdavSyncInterval: webDAVSyncInterval
   } = useSettings()
 
   const [webdavHost, setWebdavHost] = useState<string | undefined>(webDAVHost)
@@ -28,12 +33,16 @@ const WebDavSettings: FC = () => {
   const [webdavPass, setWebdavPass] = useState<string | undefined>(webDAVPass)
   const [webdavPath, setWebdavPath] = useState<string | undefined>(webDAVPath)
 
+  const [syncInterval, setSyncInterval] = useState<number>(webDAVSyncInterval)
+
   const [backuping, setBackuping] = useState(false)
   const [restoring, setRestoring] = useState(false)
 
   const dispatch = useAppDispatch()
 
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+
+  const { webdavSync } = useRuntime()
 
   // 把之前备份的文件定时上传到 webdav，首先先配置 webdav 的 host, port, user, pass, path
 
@@ -43,7 +52,7 @@ const WebDavSettings: FC = () => {
       return
     }
     setBackuping(true)
-    await backupToWebdav()
+    await backupToWebdav({ showMessage: true })
     setBackuping(false)
   }
 
@@ -55,6 +64,51 @@ const WebDavSettings: FC = () => {
     setRestoring(true)
     await restoreFromWebdav()
     setRestoring(false)
+  }
+
+  const onPressRestore = () => {
+    window.modal.confirm({
+      title: t('settings.data.webdav.restore.title'),
+      content: t('settings.data.webdav.restore.content'),
+      centered: true,
+      onOk: onRestore
+    })
+  }
+
+  const onSyncIntervalChange = (value: number) => {
+    setSyncInterval(value)
+    dispatch(_setWebdavSyncInterval(value))
+    if (value === 0) {
+      dispatch(setWebdavAutoSync(false))
+      stopAutoSync()
+    } else {
+      dispatch(setWebdavAutoSync(true))
+      startAutoSync()
+    }
+  }
+
+  const renderSyncStatus = () => {
+    if (!webdavHost) return null
+
+    if (!webdavSync.lastSyncTime && !webdavSync.syncing && !webdavSync.lastSyncError) {
+      return <span style={{ color: 'var(--text-secondary)' }}>{t('settings.data.webdav.noSync')}</span>
+    }
+
+    return (
+      <HStack gap="5px" alignItems="center">
+        {webdavSync.syncing && <SyncOutlined spin />}
+        {webdavSync.lastSyncTime && (
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {t('settings.data.webdav.lastSync')}: {dayjs(webdavSync.lastSyncTime).format('HH:mm:ss')}
+          </span>
+        )}
+        {webdavSync.lastSyncError && (
+          <span style={{ color: 'var(--error-color)' }}>
+            {t('settings.data.webdav.syncError')}: {webdavSync.lastSyncError}
+          </span>
+        )}
+      </HStack>
+    )
   }
 
   return (
@@ -109,15 +163,57 @@ const WebDavSettings: FC = () => {
       <SettingRow>
         <SettingRowTitle>{t('settings.general.backup.title')}</SettingRowTitle>
         <HStack gap="5px" justifyContent="space-between">
-          {/* 添加 在线备份 在线还原 按钮 */}
           <Button onClick={onBackup} icon={<SaveOutlined />} loading={backuping}>
             {t('settings.data.webdav.backup.button')}
           </Button>
-          <Button onClick={onRestore} icon={<FolderOpenOutlined />} loading={restoring}>
+          <Button onClick={onPressRestore} icon={<FolderOpenOutlined />} loading={restoring}>
             {t('settings.data.webdav.restore.button')}
           </Button>
         </HStack>
       </SettingRow>
+      <SettingDivider />
+      <SettingRow>
+        <SettingRowTitle>{t('settings.data.webdav.autoSync')}</SettingRowTitle>
+        <Select value={syncInterval} onChange={onSyncIntervalChange} disabled={!webdavHost} style={{ width: 120 }}>
+          <Select.Option value={0}>{t('settings.data.webdav.autoSync.off')}</Select.Option>
+          <Select.Option value={1}>
+            {t('settings.data.webdav.minute_interval', { count: 1 })}
+          </Select.Option>
+          <Select.Option value={5}>
+            {t('settings.data.webdav.minute_interval', { count: 5 })}
+          </Select.Option>
+          <Select.Option value={15}>
+            {t('settings.data.webdav.minute_interval', { count: 15 })}
+          </Select.Option>
+          <Select.Option value={30}>
+            {t('settings.data.webdav.minute_interval', { count: 30 })}
+          </Select.Option>
+          <Select.Option value={60}>
+            {t('settings.data.webdav.hour_interval', { count: 1 })}
+          </Select.Option>
+          <Select.Option value={120}>
+            {t('settings.data.webdav.hour_interval', { count: 2 })}
+          </Select.Option>
+          <Select.Option value={360}>
+            {t('settings.data.webdav.hour_interval', { count: 6 })}
+          </Select.Option>
+          <Select.Option value={720}>
+            {t('settings.data.webdav.hour_interval', { count: 12 })}
+          </Select.Option>
+          <Select.Option value={1440}>
+            {t('settings.data.webdav.hour_interval', { count: 24 })}
+          </Select.Option>
+        </Select>
+      </SettingRow>
+      {webdavSync && syncInterval > 0 && (
+        <>
+          <SettingDivider />
+          <SettingRow>
+            <SettingRowTitle>{t('settings.data.webdav.syncStatus')}</SettingRowTitle>
+            {renderSyncStatus()}
+          </SettingRow>
+        </>
+      )}
     </>
   )
 }

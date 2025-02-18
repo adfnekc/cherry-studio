@@ -8,7 +8,8 @@ import {
   OpenDialogOptions,
   OpenDialogReturnValue,
   SaveDialogOptions,
-  SaveDialogReturnValue
+  SaveDialogReturnValue,
+  shell
 } from 'electron'
 import logger from 'electron-log'
 import * as fs from 'fs'
@@ -262,6 +263,13 @@ class FileStorage {
     }
   }
 
+  public binaryFile = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<{ data: Buffer; mime: string }> => {
+    const filePath = path.join(this.storageDir, id)
+    const data = await fs.promises.readFile(filePath)
+    const mime = `image/${path.extname(filePath).slice(1)}`
+    return { data, mime }
+  }
+
   public clear = async (): Promise<void> => {
     await fs.promises.rmdir(this.storageDir, { recursive: true })
     await this.initStorageDir()
@@ -296,6 +304,10 @@ class FileStorage {
       logger.error('[IPC - Error]', 'An error occurred opening the file:', err)
       return null
     }
+  }
+
+  public openPath = async (_: Electron.IpcMainInvokeEvent, path: string): Promise<void> => {
+    shell.openPath(path).catch((err) => logger.error('[IPC - Error] Failed to open file:', err))
   }
 
   public save = async (
@@ -376,7 +388,7 @@ class FileStorage {
       }
 
       // 如果URL中有文件名，使用URL中的文件名
-      const urlFilename = url.split('/').pop()
+      const urlFilename = url.split('/').pop()?.split('?')[0]
       if (urlFilename && urlFilename.includes('.')) {
         filename = urlFilename
       }

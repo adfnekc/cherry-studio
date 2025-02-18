@@ -1,9 +1,9 @@
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
-import VisionIcon from '@renderer/components/Icons/VisionIcon'
+import ModelTags from '@renderer/components/ModelTags'
 import SelectModelPopup from '@renderer/components/Popups/SelectModelPopup'
 import { isLocalAi } from '@renderer/config/env'
-import { isVisionModel } from '@renderer/config/models'
 import { useAssistant } from '@renderer/hooks/useAssistant'
+import { getProviderName } from '@renderer/services/ProviderService'
 import { Assistant } from '@renderer/types'
 import { Button } from 'antd'
 import { FC } from 'react'
@@ -30,11 +30,17 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
     }
   }
 
+  const providerName = getProviderName(model?.provider)
+
   return (
     <DropdownButton size="small" type="default" onClick={onSelectModel}>
-      <ModelAvatar model={model} size={20} />
-      <ModelName>{model ? model.name : t('button.select_model')}</ModelName>
-      {isVisionModel(model) && <VisionIcon style={{ marginLeft: 0 }} />}
+      <ButtonContent>
+        <ModelAvatar model={model} size={20} />
+        <ModelName>
+          {model ? model.name : t('button.select_model')} {providerName ? '| ' + providerName : ''}
+        </ModelName>
+        <ModelTags model={model} showFree={false} showReasoning={false} />
+      </ButtonContent>
     </DropdownButton>
   )
 }
@@ -49,8 +55,13 @@ const DropdownButton = styled(Button)`
   border: 1px solid transparent;
 `
 
+const ButtonContent = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+`
+
 const ModelName = styled.span`
-  margin-left: -2px;
   font-weight: 500;
 `
 

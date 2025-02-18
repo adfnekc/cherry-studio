@@ -1,6 +1,7 @@
 import db from '@renderer/databases'
 import i18n from '@renderer/i18n'
 import store from '@renderer/store'
+import { setWebDAVSyncState } from '@renderer/store/runtime'
 import dayjs from 'dayjs'
 
 export async function backup() {
@@ -58,7 +59,14 @@ export async function reset() {
 }
 
 // 备份到 webdav
-export async function backupToWebdav() {
+export async function backupToWebdav({ showMessage = false }: { showMessage?: boolean } = {}) {
+  if (isManualBackupRunning) {
+    console.log('[Backup] Manual backup already in progress')
+    return
+  }
+
+  store.dispatch(setWebDAVSyncState({ syncing: true, lastSyncError: null }))
+
   const { webdavHost, webdavUser, webdavPass, webdavPath } = store.getState().settings
 
   const backupData = await getBackupData()
@@ -72,16 +80,28 @@ export async function backupToWebdav() {
       webdavPath
     })
     if (success) {
-      window.message.success({ content: i18n.t('message.backup.success'), key: 'backup' })
+      store.dispatch(
+        setWebDAVSyncState({
+          lastSyncTime: Date.now(),
+          lastSyncError: null
+        })
+      )
+      showMessage && window.message.success({ content: i18n.t('message.backup.success'), key: 'backup' })
     } else {
-      window.message.error({ content: i18n.t('message.backup.failed'), key: 'backup' })
+      store.dispatch(setWebDAVSyncState({ lastSyncError: 'Backup failed' }))
+      showMessage && window.message.error({ content: i18n.t('message.backup.failed'), key: 'backup' })
     }
   } catch (error: any) {
+    store.dispatch(setWebDAVSyncState({ lastSyncError: error.message }))
     console.error('[backup] backupToWebdav: Error uploading file to WebDAV:', error)
-    window.modal.error({
-      title: i18n.t('message.backup.failed'),
-      content: error.message
-    })
+    showMessage &&
+      window.modal.error({
+        title: i18n.t('message.backup.failed'),
+        content: error.message
+      })
+  } finally {
+    store.dispatch(setWebDAVSyncState({ syncing: false }))
+    isManualBackupRunning = false
   }
 }
 
@@ -106,6 +126,78 @@ export async function restoreFromWebdav() {
     console.error('[backup] Error downloading file from WebDAV:', error)
     window.message.error({ content: i18n.t('error.backup.file_format'), key: 'restore' })
   }
+}
+
+let autoSyncStarted = false
+let syncTimeout: NodeJS.Timeout | null = null
+let isAutoBackupRunning = false
+let isManualBackupRunning = false
+
+export function startAutoSync() {
+  if (autoSyncStarted) {
+    return
+  }
+
+  const { webdavAutoSync, webdavHost } = store.getState().settings
+
+  if (!webdavAutoSync || !webdavHost) {
+    console.log('[AutoSync] Invalid sync settings, auto sync disabled')
+    return
+  }
+
+  autoSyncStarted = true
+
+  stopAutoSync()
+
+  scheduleNextBackup()
+
+  function scheduleNextBackup() {
+    if (syncTimeout) {
+      clearTimeout(syncTimeout)
+      syncTimeout = null
+    }
+
+    const { webdavSyncInterval } = store.getState().settings
+
+    if (webdavSyncInterval <= 0) {
+      console.log('[AutoSync] Invalid sync interval, auto sync disabled')
+      stopAutoSync()
+      return
+    }
+
+    syncTimeout = setTimeout(performAutoBackup, webdavSyncInterval * 60 * 1000)
+
+    console.log(`[AutoSync] Next sync scheduled in ${webdavSyncInterval} minutes`)
+  }
+
+  async function performAutoBackup() {
+    if (isAutoBackupRunning || isManualBackupRunning) {
+      console.log('[AutoSync] Backup already in progress, rescheduling')
+      scheduleNextBackup()
+      return
+    }
+
+    isAutoBackupRunning = true
+    try {
+      console.log('[AutoSync] Performing auto backup...')
+      await backupToWebdav({ showMessage: false })
+    } catch (error) {
+      console.error('[AutoSync] Auto backup failed:', error)
+    } finally {
+      isAutoBackupRunning = false
+      scheduleNextBackup()
+    }
+  }
+}
+
+export function stopAutoSync() {
+  if (syncTimeout) {
+    console.log('[AutoSync] Stopping auto sync')
+    clearTimeout(syncTimeout)
+    syncTimeout = null
+  }
+  isAutoBackupRunning = false
+  autoSyncStarted = false
 }
 
 async function getBackupData() {

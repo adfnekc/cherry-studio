@@ -23,6 +23,11 @@ export function getDefaultTranslateAssistant(targetLanguage: string, text: strin
   const translateModel = getTranslateModel()
   const assistant: Assistant = getDefaultAssistant()
   assistant.model = translateModel
+
+  assistant.settings = {
+    temperature: 0.7
+  }
+
   assistant.prompt = store
     .getState()
     .settings.translateModelPrompt.replace('{{target_language}}', targetLanguage)
@@ -67,7 +72,7 @@ export function getAssistantProvider(assistant: Assistant): Provider {
   return provider || getDefaultProvider()
 }
 
-export function getProviderByModel(model?: Model) {
+export function getProviderByModel(model?: Model): Provider {
   const providers = store.getState().llm.providers
   const providerId = model ? model.provider : getDefaultProvider().id
   return providers.find((p) => p.id === providerId) as Provider
@@ -85,7 +90,7 @@ export const getAssistantSettings = (assistant: Assistant): AssistantSettings =>
     if (assistant.settings?.enableMaxTokens) {
       const maxTokens = assistant.settings.maxTokens
       if (typeof maxTokens === 'number') {
-        return maxTokens > 100 ? maxTokens : DEFAULT_MAX_TOKENS
+        return maxTokens > 0 ? maxTokens : DEFAULT_MAX_TOKENS
       }
       return DEFAULT_MAX_TOKENS
     }
@@ -100,7 +105,8 @@ export const getAssistantSettings = (assistant: Assistant): AssistantSettings =>
     maxTokens: getAssistantMaxTokens(),
     streamOutput: assistant?.settings?.streamOutput ?? true,
     hideMessages: assistant?.settings?.hideMessages ?? false,
-    autoResetModel: assistant?.settings?.autoResetModel ?? false
+    defaultModel: assistant?.defaultModel ?? undefined,
+    customParameters: assistant?.settings?.customParameters ?? []
   }
 }
 
@@ -126,7 +132,7 @@ export async function addAssistantMessagesToTopic({ assistant, topic }: { assist
       topicId: topic.id,
       createdAt: new Date().toISOString(),
       status: 'success',
-      modelId: assistant.defaultModel?.id || defaultModel.id,
+      model: assistant.defaultModel || defaultModel,
       type: 'text',
       isPreset: true
     }

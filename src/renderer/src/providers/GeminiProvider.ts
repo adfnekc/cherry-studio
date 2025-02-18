@@ -1,22 +1,28 @@
 import {
   Content,
+  FileDataPart,
   GoogleGenerativeAI,
   HarmBlockThreshold,
   HarmCategory,
   InlineDataPart,
   Part,
   RequestOptions,
+  SafetySetting,
   TextPart
 } from '@google/generative-ai'
-import { SUMMARIZE_PROMPT } from '@renderer/config/prompts'
+import { isWebSearchModel } from '@renderer/config/models'
+import { getStoreSetting } from '@renderer/hooks/useSettings'
+import i18n from '@renderer/i18n'
 import { getAssistantSettings, getDefaultModel, getTopNamingModel } from '@renderer/services/AssistantService'
 import { EVENT_NAMES } from '@renderer/services/EventService'
 import { filterContextMessages } from '@renderer/services/MessagesService'
-import { Assistant, FileTypes, Message, Provider, Suggestion } from '@renderer/types'
+import { Assistant, FileType, FileTypes, Message, Model, Provider, Suggestion } from '@renderer/types'
+import { removeSpecialCharacters } from '@renderer/utils'
 import axios from 'axios'
 import { first, isEmpty, takeRight } from 'lodash'
 import OpenAI from 'openai'
 
+import { CompletionsParams } from '.'
 import BaseProvider from './BaseProvider'
 
 export default class GeminiProvider extends BaseProvider {
@@ -27,14 +33,55 @@ export default class GeminiProvider extends BaseProvider {
     super(provider)
     this.sdk = new GoogleGenerativeAI(this.apiKey)
     this.requestOptions = {
-      baseUrl: this.provider.apiHost
+      baseUrl: this.getBaseURL()
     }
+  }
+
+  public getBaseURL(): string {
+    return this.provider.apiHost
+  }
+
+  private async handlePdfFile(file: FileType): Promise<Part> {
+    const smallFileSize = 20 * 1024 * 1024
+    const isSmallFile = file.size < smallFileSize
+
+    if (isSmallFile) {
+      const { data, mimeType } = await window.api.gemini.base64File(file)
+      return {
+        inlineData: {
+          data,
+          mimeType
+        }
+      } as InlineDataPart
+    }
+
+    // Retrieve file from Gemini uploaded files
+    const fileMetadata = await window.api.gemini.retrieveFile(file, this.apiKey)
+
+    if (fileMetadata) {
+      return {
+        fileData: {
+          fileUri: fileMetadata.uri,
+          mimeType: fileMetadata.mimeType
+        }
+      } as FileDataPart
+    }
+
+    // If file is not found, upload it to Gemini
+    const uploadResult = await window.api.gemini.uploadFile(file, this.apiKey)
+
+    return {
+      fileData: {
+        fileUri: uploadResult.file.uri,
+        mimeType: uploadResult.file.mimeType
+      }
+    } as FileDataPart
   }
 
   private async getMessageContents(message: Message): Promise<Content> {
     const role = message.role === 'user' ? 'user' : 'model'
 
-    const parts: Part[] = [{ text: message.content }]
+    const parts: Part[] = [{ text: await this.getMessageContent(message) }]
 
     for (const file of message.files || []) {
       if (file.type === FileTypes.IMAGE) {
@@ -46,6 +93,12 @@ export default class GeminiProvider extends BaseProvider {
           }
         } as InlineDataPart)
       }
+
+      if (file.ext === '.pdf') {
+        parts.push(await this.handlePdfFile(file))
+        continue
+      }
+
       if ([FileTypes.TEXT, FileTypes.DOCUMENT].includes(file.type)) {
         const fileContent = await (await window.api.file.read(file.id + file.ext)).trim()
         parts.push({
@@ -58,6 +111,35 @@ export default class GeminiProvider extends BaseProvider {
       role,
       parts
     }
+  }
+
+  private getSafetySettings(modelId: string): SafetySetting[] {
+    const safetyThreshold = modelId.includes('gemini-2.0-flash-exp')
+      ? ('OFF' as HarmBlockThreshold)
+      : HarmBlockThreshold.BLOCK_NONE
+
+    return [
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: safetyThreshold
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: safetyThreshold
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: safetyThreshold
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: safetyThreshold
+      },
+      {
+        category: 'HARM_CATEGORY_CIVIC_INTEGRITY' as HarmCategory,
+        threshold: safetyThreshold
+      }
+    ]
   }
 
   public async completions({ messages, assistant, onChunk, onFilterMessages }: CompletionsParams) {
@@ -85,21 +167,14 @@ export default class GeminiProvider extends BaseProvider {
         model: model.id,
         systemInstruction: assistant.prompt,
         // @ts-ignore googleSearch is not a valid tool for Gemini
-        tools: assistant.enableWebSearch ? [{ googleSearch: {} }] : [],
+        tools: assistant.enableWebSearch && isWebSearchModel(model) ? [{ googleSearch: {} }] : undefined,
+        safetySettings: this.getSafetySettings(model.id),
         generationConfig: {
           maxOutputTokens: maxTokens,
           temperature: assistant?.settings?.temperature,
-          topP: assistant?.settings?.topP
-        },
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-          {
-            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold: HarmBlockThreshold.BLOCK_NONE
-          },
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-        ]
+          topP: assistant?.settings?.topP,
+          ...this.getCustomParameters(assistant)
+        }
       },
       this.requestOptions
     )
@@ -107,35 +182,55 @@ export default class GeminiProvider extends BaseProvider {
     const chat = geminiModel.startChat({ history })
     const messageContents = await this.getMessageContents(userLastMessage!)
 
+    const start_time_millsec = new Date().getTime()
+
     if (!streamOutput) {
       const { response } = await chat.sendMessage(messageContents.parts)
+      const time_completion_millsec = new Date().getTime() - start_time_millsec
       onChunk({
         text: response.candidates?.[0].content.parts[0].text,
         usage: {
           prompt_tokens: response.usageMetadata?.promptTokenCount || 0,
           completion_tokens: response.usageMetadata?.candidatesTokenCount || 0,
           total_tokens: response.usageMetadata?.totalTokenCount || 0
-        }
+        },
+        metrics: {
+          completion_tokens: response.usageMetadata?.candidatesTokenCount,
+          time_completion_millsec,
+          time_first_token_millsec: 0
+        },
+        search: response.candidates?.[0]?.groundingMetadata
       })
       return
     }
 
     const userMessagesStream = await chat.sendMessageStream(messageContents.parts)
+    let time_first_token_millsec = 0
 
     for await (const chunk of userMessagesStream.stream) {
       if (window.keyv.get(EVENT_NAMES.CHAT_COMPLETION_PAUSED)) break
+      if (time_first_token_millsec == 0) {
+        time_first_token_millsec = new Date().getTime() - start_time_millsec
+      }
+      const time_completion_millsec = new Date().getTime() - start_time_millsec
       onChunk({
         text: chunk.text(),
         usage: {
           prompt_tokens: chunk.usageMetadata?.promptTokenCount || 0,
           completion_tokens: chunk.usageMetadata?.candidatesTokenCount || 0,
           total_tokens: chunk.usageMetadata?.totalTokenCount || 0
-        }
+        },
+        metrics: {
+          completion_tokens: chunk.usageMetadata?.candidatesTokenCount,
+          time_completion_millsec,
+          time_first_token_millsec
+        },
+        search: chunk.candidates?.[0]?.groundingMetadata
       })
     }
   }
 
-  async translate(message: Message, assistant: Assistant) {
+  async translate(message: Message, assistant: Assistant, onResponse?: (text: string) => void) {
     const defaultModel = getDefaultModel()
     const { maxTokens } = getAssistantSettings(assistant)
     const model = assistant.model || defaultModel
@@ -152,9 +247,21 @@ export default class GeminiProvider extends BaseProvider {
       this.requestOptions
     )
 
-    const { response } = await geminiModel.generateContent(message.content)
+    if (!onResponse) {
+      const { response } = await geminiModel.generateContent(message.content)
+      return response.text()
+    }
 
-    return response.text()
+    const response = await geminiModel.generateContentStream(message.content)
+
+    let text = ''
+
+    for await (const chunk of response.stream) {
+      text += chunk.text()
+      onResponse(text)
+    }
+
+    return text
   }
 
   public async summaries(messages: Message[], assistant: Assistant): Promise<string> {
@@ -174,7 +281,7 @@ export default class GeminiProvider extends BaseProvider {
 
     const systemMessage = {
       role: 'system',
-      content: SUMMARIZE_PROMPT
+      content: (getStoreSetting('topicNamingPrompt') as string) || i18n.t('prompts.title')
     }
 
     const userMessage = {
@@ -197,7 +304,7 @@ export default class GeminiProvider extends BaseProvider {
 
     const { response } = await chat.sendMessage(userMessage.content)
 
-    return response.text()
+    return removeSpecialCharacters(response.text())
   }
 
   public async generateText({ prompt, content }: { prompt: string; content: string }): Promise<string> {
@@ -220,8 +327,10 @@ export default class GeminiProvider extends BaseProvider {
     return []
   }
 
-  public async check(): Promise<{ valid: boolean; error: Error | null }> {
-    const model = this.provider.models[0]
+  public async check(model: Model): Promise<{ valid: boolean; error: Error | null }> {
+    if (!model) {
+      return { valid: false, error: new Error('No model found') }
+    }
 
     const body = {
       model: model.id,
@@ -263,5 +372,10 @@ export default class GeminiProvider extends BaseProvider {
     } catch (error) {
       return []
     }
+  }
+
+  public async getEmbeddingDimensions(model: Model): Promise<number> {
+    const data = await this.sdk.getGenerativeModel({ model: model.id }, this.requestOptions).embedContent('hi')
+    return data.embedding.values.length
   }
 }

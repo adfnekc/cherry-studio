@@ -41,22 +41,39 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve }) => {
     resolve({})
   }
 
-  const onFinish: FormProps<FieldType>['onFinish'] = (values) => {
-    if (find(models, { id: values.id })) {
-      Modal.error({ title: 'Error', content: 'Model ID already exists' })
+  const onAddModel = (values: FieldType) => {
+    const id = values.id.trim()
+
+    if (find(models, { id })) {
+      window.message.error(t('error.model.exists'))
       return
     }
 
     const model: Model = {
+      id,
       provider: provider.id,
-      id: values.id,
-      name: values.name ? values.name : values.id.toUpperCase(),
-      group: getDefaultGroupName(values.group || values.id)
+      name: values.name ? values.name : id.toUpperCase(),
+      group: getDefaultGroupName(values.group || id)
     }
 
     addModel(model)
 
-    resolve(model)
+    return true
+  }
+
+  const onFinish: FormProps<FieldType>['onFinish'] = (values) => {
+    const id = values.id.trim().replaceAll('，', ',')
+
+    if (id.includes(',')) {
+      const ids = id.split(',')
+      ids.forEach((id) => onAddModel({ id, name: id } as FieldType))
+      resolve({})
+      return
+    }
+
+    if (onAddModel(values)) {
+      resolve({})
+    }
   }
 
   return (
@@ -84,7 +101,7 @@ const PopupContainer: React.FC<Props> = ({ title, provider, resolve }) => {
           <Input
             placeholder={t('settings.models.add.model_id.placeholder')}
             spellCheck={false}
-            maxLength={50}
+            maxLength={200}
             onChange={(e) => {
               form.setFieldValue('name', e.target.value)
               form.setFieldValue('group', getDefaultGroupName(e.target.value))

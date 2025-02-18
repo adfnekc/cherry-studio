@@ -1,4 +1,5 @@
 import { isMac } from '@renderer/config/constant'
+import { DEFAULT_MIN_APPS } from '@renderer/config/minapps'
 import { SYSTEM_MODELS } from '@renderer/config/models'
 import { TRANSLATE_PROMPT } from '@renderer/config/prompts'
 import db from '@renderer/databases'
@@ -9,6 +10,16 @@ import { isEmpty } from 'lodash'
 import { createMigrate } from 'redux-persist'
 
 import { RootState } from '.'
+import { DEFAULT_SIDEBAR_ICONS } from './settings'
+
+// remove logo base64 data to reduce the size of the state
+function removeMiniAppIconsFromState(state: RootState) {
+  if (state.minapps) {
+    state.minapps.enabled = state.minapps.enabled.map((app) => ({ ...app, logo: undefined }))
+    state.minapps.disabled = state.minapps.disabled.map((app) => ({ ...app, logo: undefined }))
+    state.minapps.pinned = state.minapps.pinned.map((app) => ({ ...app, logo: undefined }))
+  }
+}
 
 const migrateConfig = {
   '2': (state: RootState) => {
@@ -60,7 +71,7 @@ const migrateConfig = {
             id: 'ollama',
             name: 'Ollama',
             apiKey: '',
-            apiHost: 'http://localhost:11434/v1/',
+            apiHost: 'http://localhost:11434',
             isSystem: true,
             models: []
           }
@@ -659,15 +670,6 @@ const migrateConfig = {
             isSystem: true,
             enabled: false
           }
-          // {
-          //   id: 'jina',
-          //   name: 'Jina',
-          //   apiKey: '',
-          //   apiHost: 'https://api.jina.ai',
-          //   models: SYSTEM_MODELS.jina,
-          //   isSystem: true,
-          //   enabled: false
-          // }
         ]
       }
     }
@@ -751,8 +753,6 @@ const migrateConfig = {
     return state
   },
   '49': (state: RootState) => {
-    state.settings.showMinappIcon = true
-    state.settings.showFilesIcon = true
     state.settings.pasteLongTextThreshold = 1500
     if (state.shortcuts) {
       state.shortcuts.shortcuts = [
@@ -766,6 +766,313 @@ const migrateConfig = {
         }
       ]
     }
+    return state
+  },
+  '50': (state: RootState) => {
+    state.llm.providers.push({
+      id: 'jina',
+      name: 'Jina',
+      type: 'openai',
+      apiKey: '',
+      apiHost: 'https://api.jina.ai',
+      models: SYSTEM_MODELS.jina,
+      isSystem: true,
+      enabled: false
+    })
+    return state
+  },
+  '51': (state: RootState) => {
+    state.settings.topicNamingPrompt = ''
+    return state
+  },
+  '54': (state: RootState) => {
+    if (state.shortcuts) {
+      state.shortcuts.shortcuts.push({
+        key: 'search_message',
+        shortcut: [isMac ? 'Command' : 'Ctrl', 'F'],
+        editable: true,
+        enabled: true,
+        system: false
+      })
+    }
+    state.settings.sidebarIcons = {
+      visible: DEFAULT_SIDEBAR_ICONS,
+      disabled: []
+    }
+    return state
+  },
+  '55': (state: RootState) => {
+    if (!state.settings.sidebarIcons) {
+      state.settings.sidebarIcons = {
+        visible: DEFAULT_SIDEBAR_ICONS,
+        disabled: []
+      }
+    }
+    return state
+  },
+  '56': (state: RootState) => {
+    state.llm.providers.push({
+      id: 'qwenlm',
+      name: 'QwenLM',
+      type: 'qwenlm',
+      apiKey: '',
+      apiHost: 'https://chat.qwenlm.ai/api/',
+      models: SYSTEM_MODELS.qwenlm,
+      isSystem: true,
+      enabled: false
+    })
+    return state
+  },
+  '57': (state: RootState) => {
+    if (state.shortcuts) {
+      state.shortcuts.shortcuts.push({
+        key: 'mini_window',
+        shortcut: [isMac ? 'Command' : 'Ctrl', 'E'],
+        editable: true,
+        enabled: false,
+        system: true
+      })
+    }
+
+    removeMiniAppIconsFromState(state)
+
+    state.llm.providers.forEach((provider) => {
+      if (provider.id === 'qwenlm') {
+        provider.type = 'qwenlm'
+      }
+    })
+
+    state.settings.enableQuickAssistant = false
+    state.settings.clickTrayToShowQuickAssistant = true
+
+    return state
+  },
+  '58': (state: RootState) => {
+    if (state.shortcuts) {
+      state.shortcuts.shortcuts.push(
+        {
+          key: 'clear_topic',
+          shortcut: [isMac ? 'Command' : 'Ctrl', 'L'],
+          editable: true,
+          enabled: true,
+          system: false
+        },
+        {
+          key: 'toggle_new_context',
+          shortcut: [isMac ? 'Command' : 'Ctrl', 'R'],
+          editable: true,
+          enabled: true,
+          system: false
+        }
+      )
+    }
+    return state
+  },
+  '59': (state: RootState) => {
+    if (state.minapps) {
+      const flowith = DEFAULT_MIN_APPS.find((app) => app.id === 'flowith')
+      if (flowith) {
+        state.minapps.enabled.push(flowith)
+      }
+    }
+    removeMiniAppIconsFromState(state)
+    return state
+  },
+  '60': (state: RootState) => {
+    state.settings.multiModelMessageStyle = 'fold'
+    return state
+  },
+  '61': (state: RootState) => {
+    state.llm.providers.forEach((provider) => {
+      if (provider.id === 'qwenlm') {
+        provider.type = 'qwenlm'
+      }
+    })
+    return state
+  },
+  '62': (state: RootState) => {
+    state.llm.providers.forEach((provider) => {
+      if (provider.id === 'azure-openai') {
+        provider.type = 'azure-openai'
+      }
+    })
+    state.settings.translateModelPrompt = TRANSLATE_PROMPT
+    return state
+  },
+  '63': (state: RootState) => {
+    if (state.minapps) {
+      const mintop = DEFAULT_MIN_APPS.find((app) => app.id === '3mintop')
+      if (mintop) {
+        state.minapps.enabled.push(mintop)
+      }
+    }
+    return state
+  },
+  '64': (state: RootState) => {
+    state.llm.providers = state.llm.providers.filter((provider) => provider.id !== 'qwenlm')
+    state.llm.providers.push({
+      id: 'baidu-cloud',
+      name: 'Baidu Cloud',
+      type: 'openai',
+      apiKey: '',
+      apiHost: 'https://qianfan.baidubce.com/v2/',
+      models: SYSTEM_MODELS['baidu-cloud'],
+      isSystem: true,
+      enabled: false
+    })
+    return state
+  },
+  '65': (state: RootState) => {
+    state.settings.targetLanguage = 'english'
+    return state
+  },
+  '66': (state: RootState) => {
+    state.llm.providers.push(
+      {
+        id: 'gitee-ai',
+        name: 'gitee ai',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://ai.gitee.com',
+        models: SYSTEM_MODELS['gitee-ai'],
+        isSystem: true,
+        enabled: false
+      },
+      {
+        id: 'ppio',
+        name: 'PPIO',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://api.ppinfra.com/v3/openai',
+        models: SYSTEM_MODELS.ppio,
+        isSystem: true,
+        enabled: false
+      }
+    )
+
+    state.llm.providers = state.llm.providers.filter((provider) => provider.id !== 'graphrag-kylin-mountain')
+
+    if (state.minapps) {
+      const aistudio = DEFAULT_MIN_APPS.find((app) => app.id === 'aistudio')
+      if (aistudio) {
+        state.minapps.enabled.push(aistudio)
+      }
+    }
+
+    return state
+  },
+  '67': (state: RootState) => {
+    if (state.minapps) {
+      const xiaoyi = DEFAULT_MIN_APPS.find((app) => app.id === 'xiaoyi')
+      if (xiaoyi) {
+        state.minapps.enabled.push(xiaoyi)
+      }
+    }
+
+    state.llm.providers.push(
+      {
+        id: 'modelscope',
+        name: 'ModelScope',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://api-inference.modelscope.cn/v1/',
+        models: SYSTEM_MODELS.modelscope,
+        isSystem: true,
+        enabled: false
+      },
+      {
+        id: 'lmstudio',
+        name: 'LM Studio',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'http://localhost:1234',
+        models: SYSTEM_MODELS.lmstudio,
+        isSystem: true,
+        enabled: false
+      },
+      {
+        id: 'perplexity',
+        name: 'Perplexity',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://api.perplexity.ai/',
+        models: SYSTEM_MODELS.perplexity,
+        isSystem: true,
+        enabled: false
+      },
+      {
+        id: 'infini',
+        name: 'Infini',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://cloud.infini-ai.com/maas',
+        models: SYSTEM_MODELS.infini,
+        isSystem: true,
+        enabled: false
+      },
+      {
+        id: 'dmxapi',
+        name: 'DMXAPI',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://api.dmxapi.com',
+        models: SYSTEM_MODELS.dmxapi,
+        isSystem: true,
+        enabled: false
+      }
+    )
+
+    state.llm.settings.lmstudio = {
+      keepAliveTime: 5
+    }
+
+    return state
+  },
+  '68': (state: RootState) => {
+    if (state.minapps) {
+      const notebooklm = DEFAULT_MIN_APPS.find((app) => app.id === 'notebooklm')
+      if (notebooklm) {
+        state.minapps.enabled.push(notebooklm)
+      }
+    }
+
+    if (!state.llm.providers.find((provider) => provider.id === 'modelscope')) {
+      state.llm.providers.push({
+        id: 'modelscope',
+        name: 'ModelScope',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'https://api-inference.modelscope.cn/v1/',
+        models: SYSTEM_MODELS.modelscope,
+        isSystem: true,
+        enabled: false
+      })
+    }
+
+    if (!state.llm.providers.find((provider) => provider.id === 'lmstudio')) {
+      state.llm.providers.push({
+        id: 'lmstudio',
+        name: 'LM Studio',
+        type: 'openai',
+        apiKey: '',
+        apiHost: 'http://localhost:1234',
+        models: SYSTEM_MODELS.lmstudio,
+        isSystem: true,
+        enabled: false
+      })
+    }
+
+    return state
+  },
+  '69': (state: RootState) => {
+    if (state.minapps) {
+      const coze = DEFAULT_MIN_APPS.find((app) => app.id === 'coze')
+      if (coze) {
+        state.minapps.enabled.push(coze)
+      }
+    }
+    state.settings.gridColumns = 2
+    state.settings.gridPopoverTrigger = 'hover'
     return state
   }
 }

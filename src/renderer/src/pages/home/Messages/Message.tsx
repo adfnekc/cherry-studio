@@ -3,9 +3,11 @@ import db from '@renderer/databases'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useModel } from '@renderer/hooks/useModel'
 import { useMessageStyle, useSettings } from '@renderer/hooks/useSettings'
+import { useTopic } from '@renderer/hooks/useTopic'
 import { fetchChatCompletion } from '@renderer/services/ApiService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
-import { estimateMessageUsage } from '@renderer/services/TokenService'
+import { getContextCount, getMessageModelId } from '@renderer/services/MessagesService'
+import { estimateHistoryTokens, estimateMessageUsage } from '@renderer/services/TokenService'
 import { Message, Topic } from '@renderer/types'
 import { classNames, runAsyncFunction } from '@renderer/utils'
 import { Divider } from 'antd'
@@ -25,19 +27,28 @@ interface Props {
   index?: number
   total?: number
   hidePresetMessages?: boolean
+  style?: React.CSSProperties
+  isGrouped?: boolean
   onGetMessages?: () => Message[]
   onSetMessages?: Dispatch<SetStateAction<Message[]>>
-  onDeleteMessage?: (message: Message) => void
+  onDeleteMessage?: (message: Message) => Promise<void>
 }
 
-const getMessageBackground = (isBubbleStyle: boolean, isAssistantMessage: boolean) =>
-  isBubbleStyle ? (isAssistantMessage ? 'var(--chat-background-assistant)' : 'var(--chat-background-user)') : undefined
+const getMessageBackground = (isBubbleStyle: boolean, isAssistantMessage: boolean) => {
+  return isBubbleStyle
+    ? isAssistantMessage
+      ? 'var(--chat-background-assistant)'
+      : 'var(--chat-background-user)'
+    : undefined
+}
 
 const MessageItem: FC<Props> = ({
   message: _message,
-  topic,
+  topic: _topic,
   index,
   hidePresetMessages,
+  isGrouped,
+  style,
   onDeleteMessage,
   onSetMessages,
   onGetMessages
@@ -45,10 +56,11 @@ const MessageItem: FC<Props> = ({
   const [message, setMessage] = useState(_message)
   const { t } = useTranslation()
   const { assistant, setModel } = useAssistant(message.assistantId)
-  const model = useModel(message.modelId)
+  const model = useModel(getMessageModelId(message)) || message.model
   const { isBubbleStyle } = useMessageStyle()
   const { showMessageDivider, messageFont, fontSize } = useSettings()
   const messageContainerRef = useRef<HTMLDivElement>(null)
+  const topic = useTopic(assistant, _topic?.id)
 
   const isLastMessage = index === 0
   const isAssistantMessage = message.role === 'assistant'
@@ -63,13 +75,22 @@ const MessageItem: FC<Props> = ({
   const messageBackground = getMessageBackground(isBubbleStyle, isAssistantMessage)
 
   const onEditMessage = useCallback(
-    (msg: Message) => {
+    async (msg: Message) => {
+      const usage = await estimateMessageUsage(msg)
+      msg.usage = usage
+
       setMessage(msg)
       const messages = onGetMessages?.()?.map((m) => (m.id === message.id ? msg : m))
       messages && onSetMessages?.(messages)
       topic && db.topics.update(topic.id, { messages })
+
+      if (messages) {
+        const tokensCount = await estimateHistoryTokens(assistant, messages)
+        const contextCount = getContextCount(assistant, messages)
+        EventEmitter.emit(EVENT_NAMES.ESTIMATED_TOKEN_COUNT, { tokensCount, contextCount })
+      }
     },
-    [message.id, onGetMessages, onSetMessages, topic]
+    [message.id, onGetMessages, onSetMessages, topic, assistant]
   )
 
   const messageHighlightHandler = (highlight: boolean = true) => {
@@ -86,9 +107,12 @@ const MessageItem: FC<Props> = ({
   }
 
   useEffect(() => {
-    const unsubscribes = [EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler)]
+    const unsubscribes = [
+      EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, messageHighlightHandler),
+      EventEmitter.on(EVENT_NAMES.RESEND_MESSAGE + ':' + message.id, onEditMessage)
+    ]
     return () => unsubscribes.forEach((unsub) => unsub())
-  }, [message])
+  }, [message, onEditMessage])
 
   useEffect(() => {
     if (message.role === 'user' && !message.usage) {
@@ -106,6 +130,14 @@ const MessageItem: FC<Props> = ({
     if (topic && onGetMessages && onSetMessages) {
       if (message.status === 'sending') {
         const messages = onGetMessages()
+        const assistantWithModel = message.model ? { ...assistant, model: message.model } : assistant
+
+        if (topic.prompt) {
+          assistantWithModel.prompt = assistantWithModel.prompt
+            ? `${assistantWithModel.prompt}\n${topic.prompt}`
+            : topic.prompt
+        }
+
         fetchChatCompletion({
           message,
           messages: messages
@@ -114,12 +146,11 @@ const MessageItem: FC<Props> = ({
               0,
               messages.findIndex((m) => m.id === message.id)
             ),
-          assistant,
-          topic,
+          assistant: assistantWithModel,
           onResponse: (msg) => {
             setMessage(msg)
             if (msg.status !== 'pending') {
-              const _messages = messages.map((m) => (m.id === msg.id ? msg : m))
+              const _messages = onGetMessages().map((m) => (m.id === msg.id ? msg : m))
               onSetMessages(_messages)
               db.topics.update(topic.id, { messages: _messages })
             }
@@ -153,8 +184,8 @@ const MessageItem: FC<Props> = ({
         'message-user': !isAssistantMessage
       })}
       ref={messageContainerRef}
-      style={isBubbleStyle ? { alignItems: isAssistantMessage ? 'start' : 'end' } : undefined}>
-      <MessageHeader message={message} assistant={assistant} model={model} key={message.modelId} />
+      style={{ ...style, alignItems: isBubbleStyle ? (isAssistantMessage ? 'start' : 'end') : undefined }}>
+      <MessageHeader message={message} assistant={assistant} model={model} key={getMessageModelId(message)} />
       <MessageContentContainer
         className="message-content-container"
         style={{ fontFamily, fontSize, background: messageBackground }}>
@@ -175,9 +206,11 @@ const MessageItem: FC<Props> = ({
               index={index}
               isLastMessage={isLastMessage}
               isAssistantMessage={isAssistantMessage}
+              isGrouped={isGrouped}
               setModel={setModel}
               onEditMessage={onEditMessage}
               onDeleteMessage={onDeleteMessage}
+              onGetMessages={onGetMessages}
             />
           </MessageFooter>
         )}
@@ -189,7 +222,6 @@ const MessageItem: FC<Props> = ({
 const MessageContainer = styled.div`
   display: flex;
   flex-direction: column;
-  padding: 15px 20px 0 20px;
   position: relative;
   transition: background-color 0.3s ease;
   &.message-highlight {
@@ -217,6 +249,7 @@ const MessageContentContainer = styled.div`
   justify-content: space-between;
   margin-left: 46px;
   margin-top: 5px;
+  overflow-y: auto;
 `
 
 const MessageFooter = styled.div`

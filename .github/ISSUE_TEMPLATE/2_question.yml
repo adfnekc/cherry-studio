@@ -1,19 +1,52 @@
-name: ❓ Question
-description: Ask a question or seek help
-title: '[Question]: '
+name: ❓ Discussion & Questions
+description: Seeking help, discussing issues, asking questions, etc...
+title: '[Discussion]: '
 labels: ['question']
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for asking a question! Please provide as much detail as possible so we can better assist you.
+        Thank you for your question! Please describe your issue in as much detail as possible so that we can better assist you.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Issue Checklist
+      description: |
+        Before submitting an issue, please make sure you have completed the following steps
+      options:
+        - label: I understand that issues are meant for feedback and problem-solving, not for venting, and I will provide as much detail as possible to help resolve the issue.
+          required: true
+        - label: I confirm that I am here to ask questions and discuss issues, not to report bugs or request features.
+          required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: What platform are you using?
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of Cherry Studio are you running?
+      placeholder: e.g. v1.0.0
+    validations:
+      required: true
 
   - type: textarea
     id: question
     attributes:
       label: Your Question
-      description: Please describe your question in detail
-      placeholder: Please explain your question as clearly as possible...
+      description: Please describe your issue in detail.
+      placeholder: Please explain your issue as clearly as possible...
     validations:
       required: true
 
@@ -35,9 +68,9 @@ body:
     id: priority
     attributes:
       label: Priority
-      description: How urgent is this question for you?
+      description: How urgent is this issue for you?
       options:
-        - Low (Can wait)
+        - Low (Review when available)
         - Medium (Would like a response soon)
         - High (Blocking progress)
     validations:

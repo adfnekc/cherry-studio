@@ -1,7 +1,14 @@
+import { REFERENCE_PROMPT } from '@renderer/config/prompts'
+import { getLMStudioKeepAliveTime } from '@renderer/hooks/useLMStudio'
 import { getOllamaKeepAliveTime } from '@renderer/hooks/useOllama'
-import { Assistant, Message, Provider, Suggestion } from '@renderer/types'
-import { delay } from '@renderer/utils'
+import { getKnowledgeReferences } from '@renderer/services/KnowledgeService'
+import store from '@renderer/store'
+import { Assistant, GenerateImageParams, Message, Model, Provider, Suggestion } from '@renderer/types'
+import { delay, isJSON, parseJSON } from '@renderer/utils'
+import { t } from 'i18next'
 import OpenAI from 'openai'
+
+import { CompletionsParams } from '.'
 
 export default abstract class BaseProvider {
   protected provider: Provider
@@ -13,6 +20,16 @@ export default abstract class BaseProvider {
     this.host = this.getBaseURL()
     this.apiKey = this.getApiKey()
   }
+
+  abstract completions({ messages, assistant, onChunk, onFilterMessages }: CompletionsParams): Promise<void>
+  abstract translate(message: Message, assistant: Assistant, onResponse?: (text: string) => void): Promise<string>
+  abstract summaries(messages: Message[], assistant: Assistant): Promise<string>
+  abstract suggestions(messages: Message[], assistant: Assistant): Promise<Suggestion[]>
+  abstract generateText({ prompt, content }: { prompt: string; content: string }): Promise<string>
+  abstract check(model: Model): Promise<{ valid: boolean; error: Error | null }>
+  abstract models(): Promise<OpenAI.Models.Model[]>
+  abstract generateImage(params: GenerateImageParams): Promise<string[]>
+  abstract getEmbeddingDimensions(model: Model): Promise<number>
 
   public getBaseURL(): string {
     const host = this.provider.apiHost
@@ -48,7 +65,11 @@ export default abstract class BaseProvider {
   }
 
   public get keepAliveTime() {
-    return this.provider.id === 'ollama' ? getOllamaKeepAliveTime() : undefined
+    return this.provider.id === 'ollama'
+      ? getOllamaKeepAliveTime()
+      : this.provider.id === 'lmstudio'
+        ? getLMStudioKeepAliveTime()
+        : undefined
   }
 
   public async fakeCompletions({ onChunk }: CompletionsParams) {
@@ -58,21 +79,60 @@ export default abstract class BaseProvider {
     }
   }
 
-  abstract completions({ messages, assistant, onChunk, onFilterMessages }: CompletionsParams): Promise<void>
-  abstract translate(message: Message, assistant: Assistant): Promise<string>
-  abstract summaries(messages: Message[], assistant: Assistant): Promise<string>
-  abstract suggestions(messages: Message[], assistant: Assistant): Promise<Suggestion[]>
-  abstract generateText({ prompt, content }: { prompt: string; content: string }): Promise<string>
-  abstract check(): Promise<{ valid: boolean; error: Error | null }>
-  abstract models(): Promise<OpenAI.Models.Model[]>
-  abstract generateImage(_params: {
-    prompt: string
-    negativePrompt: string
-    imageSize: string
-    batchSize: number
-    seed?: string
-    numInferenceSteps: number
-    guidanceScale: number
-    signal?: AbortSignal
-  }): Promise<string[]>
+  public async getMessageContent(message: Message) {
+    if (!message.knowledgeBaseIds) {
+      return message.content
+    }
+
+    const bases = store.getState().knowledge.bases.filter((kb) => message.knowledgeBaseIds?.includes(kb.id))
+
+    if (!bases || bases.length === 0) {
+      return message.content
+    }
+
+    const allReferencesPromises = bases.map(async (base) => {
+      const references = await getKnowledgeReferences(base, message)
+
+      return {
+        knowledgeBaseId: base.id,
+        references
+      }
+    })
+    const allReferences = (await Promise.all(allReferencesPromises))
+      .filter((result) => result.references && result.references.length > 0)
+      .flat()
+
+    if (allReferences.length === 0) {
+      window.message.info({
+        content: t('knowledge.no_match'),
+        duration: 4,
+        key: 'knowledge-base-no-match-info'
+      })
+      return message.content
+    }
+    const allReferencesContent = `\`\`\`json\n${JSON.stringify(allReferences, null, 2)}\n\`\`\``
+
+    return REFERENCE_PROMPT.replace('{question}', message.content).replace('{references}', allReferencesContent)
+  }
+
+  protected getCustomParameters(assistant: Assistant) {
+    return (
+      assistant?.settings?.customParameters?.reduce((acc, param) => {
+        if (!param.name?.trim()) {
+          return acc
+        }
+        if (param.type === 'json') {
+          const value = param.value as string
+          if (value === 'undefined') {
+            return { ...acc, [param.name]: undefined }
+          }
+          return { ...acc, [param.name]: isJSON(value) ? parseJSON(value) : value }
+        }
+        return {
+          ...acc,
+          [param.name]: param.value
+        }
+      }, {}) || {}
+    )
+  }
 }

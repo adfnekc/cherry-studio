@@ -1,17 +1,28 @@
-import { FolderOutlined, PictureOutlined, TranslationOutlined } from '@ant-design/icons'
+import {
+  FileSearchOutlined,
+  FolderOutlined,
+  PictureOutlined,
+  QuestionCircleOutlined,
+  TranslationOutlined
+} from '@ant-design/icons'
 import { isMac } from '@renderer/config/constant'
-import { isLocalAi, UserAvatar } from '@renderer/config/env'
+import { AppLogo, isLocalAi, UserAvatar } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import useAvatar from '@renderer/hooks/useAvatar'
-import { useRuntime } from '@renderer/hooks/useRuntime'
+import { useMinapps } from '@renderer/hooks/useMinapps'
+import { modelGenerating, useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
+import type { MenuProps } from 'antd'
 import { Tooltip } from 'antd'
 import { Avatar } from 'antd'
+import { Dropdown } from 'antd'
 import { FC } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 
+import DragableList from '../DragableList'
+import MinAppIcon from '../Icons/MinAppIcon'
 import MinApp from '../MinApp'
 import UserPopup from '../Popups/UserPopup'
 
@@ -19,26 +30,31 @@ const Sidebar: FC = () => {
   const { pathname } = useLocation()
   const avatar = useAvatar()
   const { minappShow } = useRuntime()
-  const { generating } = useRuntime()
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { windowStyle, showMinappIcon, showFilesIcon } = useSettings()
+  const { windowStyle, sidebarIcons } = useSettings()
   const { theme, toggleTheme } = useTheme()
-
-  const isRoute = (path: string): string => (pathname === path ? 'active' : '')
-  const isRoutes = (path: string): string => (pathname.startsWith(path) ? 'active' : '')
+  const { pinned } = useMinapps()
 
   const onEditUser = () => UserPopup.show()
 
   const macTransparentWindow = isMac && windowStyle === 'transparent'
   const sidebarBgColor = macTransparentWindow ? 'transparent' : 'var(--navbar-background)'
 
-  const to = (path: string) => {
-    if (generating) {
-      window.message.warning({ content: t('message.switch.disabled'), key: 'switch-assistant' })
-      return
-    }
+  const showPinnedApps = pinned.length > 0 && sidebarIcons.visible.includes('minapp')
+
+  const to = async (path: string) => {
+    await modelGenerating()
     navigate(path)
+  }
+
+  const onOpenDocs = () => {
+    MinApp.start({
+      id: 'docs',
+      name: t('docs.title'),
+      url: 'https://docs.cherry-ai.com/',
+      logo: AppLogo
+    })
   }
 
   return (
@@ -49,57 +65,27 @@ const Sidebar: FC = () => {
         zIndex: minappShow ? 10000 : 'initial'
       }}>
       <AvatarImg src={avatar || UserAvatar} draggable={false} className="nodrag" onClick={onEditUser} />
-      <MainMenus>
+      <MainMenusContainer>
         <Menus onClick={MinApp.onClose}>
-          <Tooltip title={t('assistants.title')} mouseEnterDelay={0.8} placement="right">
-            <StyledLink onClick={() => to('/')}>
-              <Icon className={isRoute('/')}>
-                <i className="iconfont icon-chat" />
-              </Icon>
-            </StyledLink>
-          </Tooltip>
-          <Tooltip title={t('agents.title')} mouseEnterDelay={0.8} placement="right">
-            <StyledLink onClick={() => to('/agents')}>
-              <Icon className={isRoutes('/agents')}>
-                <i className="iconfont icon-business-smart-assistant" />
-              </Icon>
-            </StyledLink>
-          </Tooltip>
-          <Tooltip title={t('paintings.title')} mouseEnterDelay={0.8} placement="right">
-            <StyledLink onClick={() => to('/paintings')}>
-              <Icon className={isRoute('/paintings')}>
-                <PictureOutlined style={{ fontSize: 16 }} />
-              </Icon>
-            </StyledLink>
-          </Tooltip>
-          <Tooltip title={t('translate.title')} mouseEnterDelay={0.8} placement="right">
-            <StyledLink onClick={() => to('/translate')}>
-              <Icon className={isRoute('/translate')}>
-                <TranslationOutlined />
-              </Icon>
-            </StyledLink>
-          </Tooltip>
-          {showMinappIcon && (
-            <Tooltip title={t('minapp.title')} mouseEnterDelay={0.8} placement="right">
-              <StyledLink onClick={() => to('/apps')}>
-                <Icon className={isRoute('/apps')}>
-                  <i className="iconfont icon-appstore" />
-                </Icon>
-              </StyledLink>
-            </Tooltip>
-          )}
-          {showFilesIcon && (
-            <Tooltip title={t('files.title')} mouseEnterDelay={0.8} placement="right">
-              <StyledLink onClick={() => to('/files')}>
-                <Icon className={isRoute('/files')}>
-                  <FolderOutlined />
-                </Icon>
-              </StyledLink>
-            </Tooltip>
-          )}
+          <MainMenus />
         </Menus>
-      </MainMenus>
-      <Menus onClick={MinApp.onClose}>
+        {showPinnedApps && (
+          <AppsContainer>
+            <Divider />
+            <Menus>
+              <PinnedApps />
+            </Menus>
+          </AppsContainer>
+        )}
+      </MainMenusContainer>
+      <Menus>
+        <Tooltip title={t('docs.title')} mouseEnterDelay={0.8} placement="right">
+          <Icon
+            onClick={onOpenDocs}
+            className={minappShow && MinApp.app?.url === 'https://docs.cherry-ai.com/' ? 'active' : ''}>
+            <QuestionCircleOutlined />
+          </Icon>
+        </Tooltip>
         <Tooltip title={t('settings.theme.title')} mouseEnterDelay={0.8} placement="right">
           <Icon onClick={() => toggleTheme()}>
             {theme === 'dark' ? (
@@ -110,8 +96,14 @@ const Sidebar: FC = () => {
           </Icon>
         </Tooltip>
         <Tooltip title={t('settings.title')} mouseEnterDelay={0.8} placement="right">
-          <StyledLink onClick={() => to(isLocalAi ? '/settings/assistant' : '/settings/provider')}>
-            <Icon className={pathname.startsWith('/settings') ? 'active' : ''}>
+          <StyledLink
+            onClick={async () => {
+              if (minappShow) {
+                await MinApp.close()
+              }
+              await to(isLocalAi ? '/settings/assistant' : '/settings/provider')
+            }}>
+            <Icon className={pathname.startsWith('/settings') && !minappShow ? 'active' : ''}>
               <i className="iconfont icon-setting" />
             </Icon>
           </StyledLink>
@@ -121,11 +113,97 @@ const Sidebar: FC = () => {
   )
 }
 
+const MainMenus: FC = () => {
+  const { t } = useTranslation()
+  const { pathname } = useLocation()
+  const { sidebarIcons } = useSettings()
+  const { minappShow } = useRuntime()
+  const navigate = useNavigate()
+
+  const isRoute = (path: string): string => (pathname === path && !minappShow ? 'active' : '')
+  const isRoutes = (path: string): string => (pathname.startsWith(path) && !minappShow ? 'active' : '')
+
+  const iconMap = {
+    assistants: <i className="iconfont icon-chat" />,
+    agents: <i className="iconfont icon-business-smart-assistant" />,
+    paintings: <PictureOutlined style={{ fontSize: 16 }} />,
+    translate: <TranslationOutlined />,
+    minapp: <i className="iconfont icon-appstore" />,
+    knowledge: <FileSearchOutlined />,
+    files: <FolderOutlined />
+  }
+
+  const pathMap = {
+    assistants: '/',
+    agents: '/agents',
+    paintings: '/paintings',
+    translate: '/translate',
+    minapp: '/apps',
+    knowledge: '/knowledge',
+    files: '/files'
+  }
+
+  return sidebarIcons.visible.map((icon) => {
+    const path = pathMap[icon]
+    const isActive = path === '/' ? isRoute(path) : isRoutes(path)
+
+    return (
+      <Tooltip key={icon} title={t(`${icon}.title`)} mouseEnterDelay={0.8} placement="right">
+        <StyledLink
+          onClick={async () => {
+            if (minappShow) {
+              await MinApp.close()
+            }
+            navigate(path)
+          }}>
+          <Icon className={isActive}>{iconMap[icon]}</Icon>
+        </StyledLink>
+      </Tooltip>
+    )
+  })
+}
+
+const PinnedApps: FC = () => {
+  const { pinned, updatePinnedMinapps } = useMinapps()
+  const { t } = useTranslation()
+  const { minappShow } = useRuntime()
+
+  return (
+    <DragableList list={pinned} onUpdate={updatePinnedMinapps} listStyle={{ marginBottom: 5 }}>
+      {(app) => {
+        const menuItems: MenuProps['items'] = [
+          {
+            key: 'togglePin',
+            label: t('minapp.sidebar.remove.title'),
+            onClick: () => {
+              const newPinned = pinned.filter((item) => item.id !== app.id)
+              updatePinnedMinapps(newPinned)
+            }
+          }
+        ]
+        const isActive = minappShow && MinApp.app?.id === app.id
+        return (
+          <Tooltip key={app.id} title={app.name} mouseEnterDelay={0.8} placement="right">
+            <StyledLink>
+              <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
+                <Icon onClick={() => MinApp.start(app)} className={isActive ? 'active' : ''}>
+                  <MinAppIcon size={20} app={app} style={{ borderRadius: 6 }} />
+                </Icon>
+              </Dropdown>
+            </StyledLink>
+          </Tooltip>
+        )
+      }}
+    </DragableList>
+  )
+}
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 8px 0;
+  padding-bottom: 12px;
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   height: ${isMac ? 'calc(100vh - var(--navbar-height))' : '100vh'};
@@ -142,15 +220,18 @@ const AvatarImg = styled(Avatar)`
   border: none;
   cursor: pointer;
 `
-const MainMenus = styled.div`
+const MainMenusContainer = styled.div`
   display: flex;
   flex: 1;
+  flex-direction: column;
+  overflow: hidden;
 `
 
 const Menus = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 5px;
 `
 
 const Icon = styled.div`
@@ -160,7 +241,6 @@ const Icon = styled.div`
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  margin-bottom: 5px;
   -webkit-app-region: none;
   border: 0.5px solid transparent;
   .iconfont,
@@ -196,6 +276,26 @@ const StyledLink = styled.div`
   &* {
     user-select: none;
   }
+`
+
+const AppsContainer = styled.div`
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-bottom: 10px;
+  -webkit-app-region: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`
+
+const Divider = styled.div`
+  width: 50%;
+  margin: 8px 0;
+  border-bottom: 0.5px solid var(--color-border);
 `
 
 export default Sidebar

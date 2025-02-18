@@ -1,10 +1,14 @@
 /* eslint-disable react/no-unknown-property */
-import { CloseOutlined, ExportOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CloseOutlined, ExportOutlined, PushpinOutlined, ReloadOutlined } from '@ant-design/icons'
 import { isMac, isWindows } from '@renderer/config/constant'
+import { AppLogo } from '@renderer/config/env'
+import { DEFAULT_MIN_APPS } from '@renderer/config/minapps'
 import { useBridge } from '@renderer/hooks/useBridge'
+import { useMinapps } from '@renderer/hooks/useMinapps'
 import store from '@renderer/store'
 import { setMinappShow } from '@renderer/store/runtime'
 import { MinAppType } from '@renderer/types'
+import { delay } from '@renderer/utils'
 import { Avatar, Drawer } from 'antd'
 import { WebviewTag } from 'electron'
 import { useEffect, useRef, useState } from 'react'
@@ -19,6 +23,8 @@ interface Props {
 }
 
 const PopupContainer: React.FC<Props> = ({ app, resolve }) => {
+  const { pinned, updatePinnedMinapps } = useMinapps()
+  const isPinned = pinned.some((p) => p.id === app.id)
   const [open, setOpen] = useState(true)
   const [opened, setOpened] = useState(false)
   const [isReady, setIsReady] = useState(false)
@@ -27,10 +33,12 @@ const PopupContainer: React.FC<Props> = ({ app, resolve }) => {
   useBridge()
 
   const canOpenExternalLink = app.url.startsWith('http://') || app.url.startsWith('https://')
+  const canPinned = DEFAULT_MIN_APPS.some((i) => i.id === app?.id)
 
-  const onClose = () => {
+  const onClose = async (_delay = 0.3) => {
     setOpen(false)
-    setTimeout(() => resolve({}), 300)
+    await delay(_delay)
+    resolve({})
   }
 
   MinApp.onClose = onClose
@@ -42,7 +50,15 @@ const PopupContainer: React.FC<Props> = ({ app, resolve }) => {
   }
 
   const onOpenLink = () => {
-    window.api.openWebsite(app.url)
+    if (webviewRef.current) {
+      const currentUrl = webviewRef.current.getURL()
+      window.api.openWebsite(currentUrl)
+    }
+  }
+
+  const onTogglePin = () => {
+    const newPinned = isPinned ? pinned.filter((item) => item.id !== app.id) : [...pinned, app]
+    updatePinnedMinapps(newPinned)
   }
 
   const Title = () => {
@@ -53,12 +69,17 @@ const PopupContainer: React.FC<Props> = ({ app, resolve }) => {
           <Button onClick={onReload}>
             <ReloadOutlined />
           </Button>
+          {canPinned && (
+            <Button onClick={onTogglePin} className={isPinned ? 'pinned' : ''}>
+              <PushpinOutlined style={{ fontSize: 16 }} />
+            </Button>
+          )}
           {canOpenExternalLink && (
             <Button onClick={onOpenLink}>
               <ExportOutlined />
             </Button>
           )}
-          <Button onClick={onClose}>
+          <Button onClick={() => onClose()}>
             <CloseOutlined />
           </Button>
         </ButtonsGroup>
@@ -99,7 +120,7 @@ const PopupContainer: React.FC<Props> = ({ app, resolve }) => {
     <Drawer
       title={<Title />}
       placement="bottom"
-      onClose={onClose}
+      onClose={() => onClose()}
       open={open}
       mask={true}
       rootClassName="minapp-drawer"
@@ -138,7 +159,7 @@ const TitleContainer = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
-  padding-left: ${isMac ? '20px' : '15px'};
+  padding-left: ${isMac ? '20px' : '10px'};
   padding-right: 10px;
   position: absolute;
   top: 0;
@@ -186,6 +207,10 @@ const Button = styled.div`
     color: var(--color-text-1);
     background-color: var(--color-background-mute);
   }
+  &.pinned {
+    color: var(--color-primary);
+    background-color: var(--color-primary-bg);
+  }
 `
 
 const EmptyView = styled.div`
@@ -202,12 +227,26 @@ const EmptyView = styled.div`
 export default class MinApp {
   static topviewId = 0
   static onClose = () => {}
-  static close() {
-    TopView.hide('MinApp')
-    store.dispatch(setMinappShow(false))
-  }
-  static start(app: MinAppType) {
+  static app: MinAppType | null = null
+
+  static async start(app: MinAppType) {
+    if (app?.id && MinApp.app?.id === app?.id) {
+      return
+    }
+
+    if (MinApp.app) {
+      // @ts-ignore delay params
+      await MinApp.onClose(0)
+      await delay(0)
+    }
+
+    if (!app.logo) {
+      app.logo = AppLogo
+    }
+
+    MinApp.app = app
     store.dispatch(setMinappShow(true))
+
     return new Promise<any>((resolve) => {
       TopView.show(
         <PopupContainer
@@ -220,5 +259,12 @@ export default class MinApp {
         'MinApp'
       )
     })
+  }
+
+  static close() {
+    TopView.hide('MinApp')
+    store.dispatch(setMinappShow(false))
+    MinApp.app = null
+    MinApp.onClose = () => {}
   }
 }

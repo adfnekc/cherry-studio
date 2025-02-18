@@ -5,8 +5,10 @@ import storage from 'redux-persist/lib/storage'
 
 import agents from './agents'
 import assistants from './assistants'
+import knowledge from './knowledge'
 import llm from './llm'
 import migrate from './migrate'
+import minapps from './minapps'
 import paintings from './paintings'
 import runtime from './runtime'
 import settings from './settings'
@@ -19,14 +21,16 @@ const rootReducer = combineReducers({
   llm,
   settings,
   runtime,
-  shortcuts
+  shortcuts,
+  knowledge,
+  minapps
 })
 
 const persistedReducer = persistReducer(
   {
     key: 'cherry-studio',
     storage,
-    version: 49,
+    version: 69,
     blacklist: ['runtime'],
     migrate
   },
@@ -53,5 +57,7 @@ export const persistor = persistStore(store)
 export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
 export const useAppSelector = useSelector.withTypes<RootState>()
 export const useAppStore = useStore.withTypes<typeof store>()
+
+window.store = store
 
 export default store

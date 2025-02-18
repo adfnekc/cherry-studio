@@ -89,6 +89,7 @@ const AssistantSettings: FC = () => {
         value={defaultAssistant.prompt}
         onChange={(e) => updateDefaultAssistant({ ...defaultAssistant, prompt: e.target.value })}
         style={{ margin: '10px 0' }}
+        spellCheck={false}
       />
       <SettingSubtitle
         style={{
@@ -116,14 +117,14 @@ const AssistantSettings: FC = () => {
             onChangeComplete={onTemperatureChange}
             value={typeof temperature === 'number' ? temperature : 0}
             marks={{ 0: '0', 0.7: '0.7', 2: '2' }}
-            step={0.1}
+            step={0.01}
           />
         </Col>
         <Col span={3}>
           <InputNumber
             min={0}
             max={2}
-            step={0.1}
+            step={0.01}
             value={temperature}
             onChange={onTemperatureChange}
             style={{ width: '100%' }}
@@ -145,7 +146,7 @@ const AssistantSettings: FC = () => {
             onChangeComplete={onTopPChange}
             value={typeof topP === 'number' ? topP : 1}
             marks={{ 0: '0', 0.5: '0.5', 1: '1' }}
-            step={0.1}
+            step={0.01}
           />
         </Col>
         <Col span={3}>

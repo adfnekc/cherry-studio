@@ -1,5 +1,5 @@
 import { useAssistants } from '@renderer/hooks/useAssistant'
-import { useShowAssistants } from '@renderer/hooks/useStore'
+import { useSettings } from '@renderer/hooks/useSettings'
 import { useActiveTopic } from '@renderer/hooks/useTopic'
 import NavigationService from '@renderer/services/NavigationService'
 import { Assistant } from '@renderer/types'
@@ -22,7 +22,7 @@ const HomePage: FC = () => {
 
   const [activeAssistant, setActiveAssistant] = useState(state?.assistant || _activeAssistant || assistants[0])
   const { activeTopic, setActiveTopic } = useActiveTopic(activeAssistant, state?.topic)
-  const { showAssistants } = useShowAssistants()
+  const { showAssistants, showTopics, topicPosition } = useSettings()
 
   _activeAssistant = activeAssistant
 
@@ -35,8 +35,17 @@ const HomePage: FC = () => {
     state?.topic && setActiveTopic(state?.topic)
   }, [state])
 
+  useEffect(() => {
+    const canMinimize = topicPosition == 'left' ? !showAssistants : !showAssistants && !showTopics
+    window.api.window.setMinimumSize(canMinimize ? 520 : 1080, 600)
+
+    return () => {
+      window.api.window.resetMinimumSize()
+    }
+  }, [showAssistants, showTopics, topicPosition])
+
   return (
-    <Container>
+    <Container id="home-page">
       <Navbar activeAssistant={activeAssistant} activeTopic={activeTopic} setActiveTopic={setActiveTopic} />
       <ContentContainer id="content-container">
         {showAssistants && (

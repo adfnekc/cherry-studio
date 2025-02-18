@@ -1,9 +1,9 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SortAscendingOutlined } from '@ant-design/icons'
-import AssistantSettingsPopup from '@renderer/components/AssistantSettings'
 import { useAgents } from '@renderer/hooks/useAgents'
+import AssistantSettingsPopup from '@renderer/pages/settings/AssistantSettings'
 import { createAssistantFromAgent } from '@renderer/services/AssistantService'
 import { Agent } from '@renderer/types'
-import { Col } from 'antd'
+import { Col, Row } from 'antd'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -43,7 +43,7 @@ const MyAgents: React.FC<Props> = ({ onClick, search }) => {
   )
 
   return (
-    <>
+    <Row gutter={[20, 20]}>
       {filteredAgents.map((agent) => {
         const dropdownMenuItems = [
           {
@@ -102,7 +102,7 @@ const MyAgents: React.FC<Props> = ({ onClick, search }) => {
       <Col span={6}>
         <AddAgentCard onClick={() => AddAgentPopup.show()} />
       </Col>
-    </>
+    </Row>
   )
 }
 

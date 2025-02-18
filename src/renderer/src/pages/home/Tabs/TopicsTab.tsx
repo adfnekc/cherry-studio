@@ -4,21 +4,24 @@ import {
   DeleteOutlined,
   EditOutlined,
   FolderOutlined,
+  PushpinOutlined,
+  QuestionCircleOutlined,
   UploadOutlined
 } from '@ant-design/icons'
 import DragableList from '@renderer/components/DragableList'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { useAssistant, useAssistants } from '@renderer/hooks/useAssistant'
+import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { TopicManager } from '@renderer/hooks/useTopic'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
-import store, { useAppSelector } from '@renderer/store'
+import store from '@renderer/store'
 import { setGenerating } from '@renderer/store/runtime'
 import { Assistant, Topic } from '@renderer/types'
-import { exportTopicAsMarkdown, topicToMarkdown } from '@renderer/utils/export'
-import { Dropdown, MenuProps } from 'antd'
+import { exportTopicAsMarkdown, exportTopicToNotion, topicToMarkdown } from '@renderer/utils/export'
+import { Dropdown, MenuProps, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { findIndex } from 'lodash'
 import { FC, useCallback } from 'react'
@@ -35,46 +38,44 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
   const { assistants } = useAssistants()
   const { assistant, removeTopic, moveTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
   const { t } = useTranslation()
-  const generating = useAppSelector((state) => state.runtime.generating)
   const { showTopicTime, topicPosition } = useSettings()
 
-  const borderRadius = showTopicTime ? 12 : 17
+  const borderRadius = showTopicTime ? 12 : 'var(--list-item-border-radius)'
+
+  const onPinTopic = useCallback(
+    (topic: Topic) => {
+      const updatedTopic = { ...topic, pinned: !topic.pinned }
+      updateTopic(updatedTopic)
+    },
+    [updateTopic]
+  )
 
   const onDeleteTopic = useCallback(
-    (topic: Topic) => {
-      if (generating) {
-        window.message.warning({ content: t('message.switch.disabled'), key: 'generating' })
-        return
-      }
+    async (topic: Topic) => {
+      await modelGenerating()
       const index = findIndex(assistant.topics, (t) => t.id === topic.id)
       setActiveTopic(assistant.topics[index + 1 === assistant.topics.length ? 0 : index + 1])
       removeTopic(topic)
     },
-    [assistant.topics, generating, removeTopic, setActiveTopic, t]
+    [assistant.topics, removeTopic, setActiveTopic]
   )
 
   const onMoveTopic = useCallback(
-    (topic: Topic, toAssistant: Assistant) => {
-      if (generating) {
-        window.message.warning({ content: t('message.switch.disabled'), key: 'generating' })
-        return
-      }
+    async (topic: Topic, toAssistant: Assistant) => {
+      await modelGenerating()
       const index = findIndex(assistant.topics, (t) => t.id === topic.id)
       setActiveTopic(assistant.topics[index + 1 === assistant.topics.length ? 0 : index + 1])
       moveTopic(topic, toAssistant)
     },
-    [assistant.topics, generating, moveTopic, setActiveTopic, t]
+    [assistant.topics, moveTopic, setActiveTopic]
   )
 
   const onSwitchTopic = useCallback(
-    (topic: Topic) => {
-      if (generating) {
-        window.message.warning({ content: t('message.switch.disabled'), key: 'generating' })
-        return
-      }
+    async (topic: Topic) => {
+      await modelGenerating()
       setActiveTopic(topic)
     },
-    [generating, setActiveTopic, t]
+    [setActiveTopic]
   )
 
   const onClearMessages = useCallback(() => {
@@ -116,6 +117,36 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
           }
         },
         {
+          label: t('chat.topics.prompt'),
+          key: 'topic-prompt',
+          icon: <i className="iconfont icon-ai-model1" style={{ fontSize: '14px' }} />,
+          extra: (
+            <Tooltip title={t('chat.topics.prompt.tips')}>
+              <QuestionIcon />
+            </Tooltip>
+          ),
+          async onClick() {
+            const prompt = await PromptPopup.show({
+              title: t('chat.topics.prompt.edit.title'),
+              message: '',
+              defaultValue: topic?.prompt || '',
+              inputProps: {
+                rows: 8,
+                allowClear: true
+              }
+            })
+            prompt && updateTopic({ ...topic, prompt: prompt.trim() })
+          }
+        },
+        {
+          label: topic.pinned ? t('chat.topics.unpinned') : t('chat.topics.pinned'),
+          key: 'pin',
+          icon: <PushpinOutlined />,
+          onClick() {
+            onPinTopic(topic)
+          }
+        },
+        {
           label: t('chat.topics.clear.title'),
           key: 'clear-messages',
           icon: <ClearOutlined />,
@@ -142,6 +173,7 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
               key: 'markdown',
               onClick: () => exportTopicAsMarkdown(topic)
             },
+
             {
               label: t('chat.topics.export.word'),
               key: 'word',
@@ -149,6 +181,11 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
                 const markdown = await topicToMarkdown(topic)
                 window.api.export.toWord(markdown, topic.name)
               }
+            },
+            {
+              label: t('chat.topics.export.notion'),
+              key: 'notion',
+              onClick: () => exportTopicToNotion(topic)
             }
           ]
         }
@@ -169,7 +206,7 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
         })
       }
 
-      if (assistant.topics.length > 1) {
+      if (assistant.topics.length > 1 && !topic.pinned) {
         menus.push({ type: 'divider' })
         menus.push({
           label: t('common.delete'),
@@ -182,11 +219,11 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
 
       return menus
     },
-    [assistant, assistants, onClearMessages, onDeleteTopic, onMoveTopic, t, updateTopic]
+    [assistant, assistants, onClearMessages, onPinTopic, onDeleteTopic, onMoveTopic, t, updateTopic]
   )
 
   return (
-    <Container right={topicPosition === 'right'}>
+    <Container right={topicPosition === 'right'} className="topics-tab">
       <DragableList list={assistant.topics} onUpdate={updateTopics}>
         {(topic) => {
           const isActive = topic.id === activeTopic?.id
@@ -194,13 +231,19 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
             <Dropdown menu={{ items: getTopicMenuItems(topic) }} trigger={['contextMenu']} key={topic.id}>
               <TopicListItem
                 className={isActive ? 'active' : ''}
-                style={{ borderRadius }}
-                onClick={() => onSwitchTopic(topic)}>
+                onClick={() => onSwitchTopic(topic)}
+                style={{ borderRadius }}>
                 <TopicName className="name">{topic.name.replace('`', '')}</TopicName>
+                {topic.prompt && (
+                  <TopicPromptText className="prompt">
+                    {t('common.prompt')}: {topic.prompt}
+                  </TopicPromptText>
+                )}
                 {showTopicTime && (
                   <TopicTime className="time">{dayjs(topic.createdAt).format('MM/DD HH:mm')}</TopicTime>
                 )}
-                {isActive && (
+                <MenuButton className="pin">{topic.pinned && <PushpinOutlined />}</MenuButton>
+                {isActive && !topic.pinned && (
                   <MenuButton
                     className="menu"
                     onClick={(e) => {
@@ -232,8 +275,9 @@ const Container = styled(Scrollbar)`
 
 const TopicListItem = styled.div`
   padding: 7px 12px;
-  margin: 0 10px;
-  border-radius: 16px;
+  margin-left: 10px;
+  margin-right: 4px;
+  border-radius: var(--list-item-border-radius);
   font-family: Ubuntu;
   font-size: 13px;
   display: flex;
@@ -275,6 +319,18 @@ const TopicName = styled.div`
   font-size: 13px;
 `
 
+const TopicPromptText = styled.div`
+  color: var(--color-text-2);
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  ~ .prompt-text {
+    margin-top: 10px;
+  }
+`
+
 const TopicTime = styled.div`
   color: var(--color-text-3);
   font-size: 11px;
@@ -293,6 +349,11 @@ const MenuButton = styled.div`
   .anticon {
     font-size: 12px;
   }
+`
+const QuestionIcon = styled(QuestionCircleOutlined)`
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--color-text-3);
 `
 
 export default Topics

@@ -1,4 +1,5 @@
 import { FileType, Model } from '@renderer/types'
+import { ModalFuncProps } from 'antd/es/modal/interface'
 import imageCompression from 'browser-image-compression'
 import html2canvas from 'html2canvas'
 // @ts-ignore next-line`
@@ -23,6 +24,14 @@ export function isJSON(str: any): boolean {
     return typeof JSON.parse(str) === 'object'
   } catch (e) {
     return false
+  }
+}
+
+export function parseJSON(str: string) {
+  try {
+    return JSON.parse(str)
+  } catch (e) {
+    return null
   }
 }
 
@@ -150,6 +159,11 @@ export function getErrorMessage(error: any) {
 
 export function removeQuotes(str) {
   return str.replace(/['"]+/g, '')
+}
+
+export function removeSpecialCharacters(str: string) {
+  // First remove newlines and quotes, then remove other special characters
+  return str.replace(/[\n"]/g, '').replace(/[\p{M}\p{N}\p{P}\p{S}]/gu, '')
 }
 
 export function generateColorFromChar(char: string) {
@@ -374,6 +388,21 @@ export const compareVersions = (v1: string, v2: string): number => {
     if (v1Part < v2Part) return -1
   }
   return 0
+}
+
+export function isMiniWindow() {
+  return window.location.hash === '#/mini'
+}
+
+export function modalConfirm(params: ModalFuncProps) {
+  return new Promise((resolve) => {
+    window.modal.confirm({
+      centered: true,
+      ...params,
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false)
+    })
+  })
 }
 
 export { classNames }

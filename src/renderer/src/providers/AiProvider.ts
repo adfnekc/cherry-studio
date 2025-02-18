@@ -1,7 +1,9 @@
 import BaseProvider from '@renderer/providers/BaseProvider'
 import ProviderFactory from '@renderer/providers/ProviderFactory'
-import { Assistant, Message, Provider, Suggestion } from '@renderer/types'
+import { Assistant, GenerateImageParams, Message, Model, Provider, Suggestion } from '@renderer/types'
 import OpenAI from 'openai'
+
+import { CompletionsParams } from '.'
 
 export default class AiProvider {
   private sdk: BaseProvider
@@ -18,8 +20,8 @@ export default class AiProvider {
     return this.sdk.completions({ messages, assistant, onChunk, onFilterMessages })
   }
 
-  public async translate(message: Message, assistant: Assistant): Promise<string> {
-    return this.sdk.translate(message, assistant)
+  public async translate(message: Message, assistant: Assistant, onResponse?: (text: string) => void): Promise<string> {
+    return this.sdk.translate(message, assistant, onResponse)
   }
 
   public async summaries(messages: Message[], assistant: Assistant): Promise<string> {
@@ -34,24 +36,27 @@ export default class AiProvider {
     return this.sdk.generateText({ prompt, content })
   }
 
-  public async check(): Promise<{ valid: boolean; error: Error | null }> {
-    return this.sdk.check()
+  public async check(model: Model): Promise<{ valid: boolean; error: Error | null }> {
+    return this.sdk.check(model)
   }
 
   public async models(): Promise<OpenAI.Models.Model[]> {
     return this.sdk.models()
   }
 
-  public async generateImage(params: {
-    prompt: string
-    negativePrompt: string
-    imageSize: string
-    batchSize: number
-    seed?: string
-    numInferenceSteps: number
-    guidanceScale: number
-    signal?: AbortSignal
-  }): Promise<string[]> {
+  public getApiKey(): string {
+    return this.sdk.getApiKey()
+  }
+
+  public async generateImage(params: GenerateImageParams): Promise<string[]> {
     return this.sdk.generateImage(params)
+  }
+
+  public async getEmbeddingDimensions(model: Model): Promise<number> {
+    return this.sdk.getEmbeddingDimensions(model)
+  }
+
+  public getBaseURL(): string {
+    return this.sdk.getBaseURL()
   }
 }

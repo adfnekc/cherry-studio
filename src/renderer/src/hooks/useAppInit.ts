@@ -3,7 +3,7 @@ import { isLocalAi } from '@renderer/config/env'
 import db from '@renderer/databases'
 import i18n from '@renderer/i18n'
 import { useAppDispatch } from '@renderer/store'
-import { setAvatar, setFilesPath, setUpdateState } from '@renderer/store/runtime'
+import { setAvatar, setFilesPath, setResourcesPath, setUpdateState } from '@renderer/store/runtime'
 import { delay, runAsyncFunction } from '@renderer/utils'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect } from 'react'
@@ -15,7 +15,7 @@ import useUpdateHandler from './useUpdateHandler'
 
 export function useAppInit() {
   const dispatch = useAppDispatch()
-  const { proxyUrl, language, windowStyle, manualUpdateCheck, proxyMode } = useSettings()
+  const { proxyUrl, language, windowStyle, manualUpdateCheck, proxyMode, customCss } = useSettings()
   const { minappShow } = useRuntime()
   const { setDefaultModel, setTopicNamingModel, setTranslateModel } = useDefaultModel()
   const avatar = useLiveQuery(() => db.settings.get('image://avatar'))
@@ -71,6 +71,25 @@ export function useAppInit() {
     // set files path
     window.api.getAppInfo().then((info) => {
       dispatch(setFilesPath(info.filesPath))
+      dispatch(setResourcesPath(info.resourcesPath))
     })
   }, [dispatch])
+
+  useEffect(() => {
+    import('@renderer/queue/KnowledgeQueue')
+  }, [])
+
+  useEffect(() => {
+    const oldCustomCss = document.getElementById('user-defined-custom-css')
+    if (oldCustomCss) {
+      oldCustomCss.remove()
+    }
+
+    if (customCss) {
+      const style = document.createElement('style')
+      style.id = 'user-defined-custom-css'
+      style.textContent = customCss
+      document.head.appendChild(style)
+    }
+  }, [customCss])
 }

@@ -1,10 +1,11 @@
-import { isSupportedModel, isVisionModel } from '@renderer/config/models'
-import { SUMMARIZE_PROMPT } from '@renderer/config/prompts'
+import { getOpenAIWebSearchParams, isReasoningModel, isSupportedModel, isVisionModel } from '@renderer/config/models'
+import { getStoreSetting } from '@renderer/hooks/useSettings'
+import i18n from '@renderer/i18n'
 import { getAssistantSettings, getDefaultModel, getTopNamingModel } from '@renderer/services/AssistantService'
 import { EVENT_NAMES } from '@renderer/services/EventService'
 import { filterContextMessages } from '@renderer/services/MessagesService'
-import { Assistant, FileTypes, Message, Model, Provider, Suggestion } from '@renderer/types'
-import { removeQuotes } from '@renderer/utils'
+import { Assistant, FileTypes, GenerateImageParams, Message, Model, Provider, Suggestion } from '@renderer/types'
+import { removeSpecialCharacters } from '@renderer/utils'
 import { takeRight } from 'lodash'
 import OpenAI, { AzureOpenAI } from 'openai'
 import {
@@ -13,6 +14,7 @@ import {
   ChatCompletionMessageParam
 } from 'openai/resources'
 
+import { CompletionsParams } from '.'
 import BaseProvider from './BaseProvider'
 
 export default class OpenAIProvider extends BaseProvider {
@@ -21,7 +23,7 @@ export default class OpenAIProvider extends BaseProvider {
   constructor(provider: Provider) {
     super(provider)
 
-    if (provider.id === 'azure-openai') {
+    if (provider.id === 'azure-openai' || provider.type === 'azure-openai') {
       this.sdk = new AzureOpenAI({
         dangerouslyAllowBrowser: true,
         apiKey: this.apiKey,
@@ -49,11 +51,12 @@ export default class OpenAIProvider extends BaseProvider {
     model: Model
   ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam> {
     const isVision = isVisionModel(model)
+    const content = await this.getMessageContent(message)
 
     if (!message.files) {
       return {
         role: message.role,
-        content: message.content
+        content
       }
     }
 
@@ -73,21 +76,21 @@ export default class OpenAIProvider extends BaseProvider {
 
           return {
             role: message.role,
-            content: message.content + divider + text
+            content: content + divider + text
           }
         }
       }
 
       return {
         role: message.role,
-        content: message.content
+        content
       }
     }
 
     const parts: ChatCompletionContentPart[] = [
       {
         type: 'text',
-        text: message.content
+        text: content
       }
     ]
 
@@ -114,91 +117,218 @@ export default class OpenAIProvider extends BaseProvider {
     } as ChatCompletionMessageParam
   }
 
+  private getTemperature(assistant: Assistant, model: Model) {
+    if (isReasoningModel(model)) return undefined
+
+    return assistant?.settings?.temperature
+  }
+
+  private getProviderSpecificParameters(assistant: Assistant, model: Model) {
+    const { maxTokens } = getAssistantSettings(assistant)
+
+    if (this.provider.id === 'openrouter') {
+      if (model.id.includes('deepseek-r1')) {
+        return {
+          include_reasoning: true
+        }
+      }
+    }
+
+    if (this.isOpenAIo1(model)) {
+      return {
+        max_tokens: undefined,
+        max_completion_tokens: maxTokens
+      }
+    }
+
+    return {}
+  }
+
+  private getTopP(assistant: Assistant, model: Model) {
+    if (isReasoningModel(model)) return undefined
+
+    return assistant?.settings?.topP
+  }
+
+  private getReasoningEffort(assistant: Assistant, model: Model) {
+    if (this.provider.id === 'groq') {
+      return {}
+    }
+
+    if (isReasoningModel(model)) {
+      return {
+        reasoning_effort: assistant?.settings?.reasoning_effort
+      }
+    }
+
+    return {}
+  }
+
+  private isOpenAIo1(model: Model) {
+    return model.id.startsWith('o1')
+  }
+
   async completions({ messages, assistant, onChunk, onFilterMessages }: CompletionsParams): Promise<void> {
     const defaultModel = getDefaultModel()
     const model = assistant.model || defaultModel
     const { contextCount, maxTokens, streamOutput } = getAssistantSettings(assistant)
 
-    const systemMessage = assistant.prompt ? { role: 'system', content: assistant.prompt } : undefined
+    let systemMessage = assistant.prompt ? { role: 'system', content: assistant.prompt } : undefined
+
+    if (['o1', 'o1-2024-12-17'].includes(model.id) || model.id.startsWith('o3')) {
+      systemMessage = {
+        role: 'developer',
+        content: `Formatting re-enabled${systemMessage ? '\n' + systemMessage.content : ''}`
+      }
+    }
+
     const userMessages: ChatCompletionMessageParam[] = []
 
     const _messages = filterContextMessages(takeRight(messages, contextCount + 1))
     onFilterMessages(_messages)
 
+    if (model.id === 'deepseek-reasoner') {
+      if (_messages[0]?.role !== 'user') {
+        userMessages.push({ role: 'user', content: '' })
+      }
+    }
+
     for (const message of _messages) {
       userMessages.push(await this.getMessageParam(message, model))
     }
 
-    const isOpenAIo1 = model.id.includes('o1-')
-    const isSupportStreamOutput = streamOutput
+    const isOpenAIo1 = this.isOpenAIo1(model)
+
+    const isSupportStreamOutput = () => {
+      if (isOpenAIo1) {
+        return false
+      }
+      return streamOutput
+    }
+
+    let hasReasoningContent = false
+    const isReasoningJustDone = (delta: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta) =>
+      hasReasoningContent ? !!delta?.content : delta?.content === '</think>'
 
     let time_first_token_millsec = 0
+    let time_first_content_millsec = 0
     const start_time_millsec = new Date().getTime()
 
     // @ts-ignore key is not typed
     const stream = await this.sdk.chat.completions.create({
       model: model.id,
-      messages: [isOpenAIo1 ? undefined : systemMessage, ...userMessages].filter(
-        Boolean
-      ) as ChatCompletionMessageParam[],
-      temperature: isOpenAIo1 ? 1 : assistant?.settings?.temperature,
-      top_p: assistant?.settings?.topP,
+      messages: [systemMessage, ...userMessages].filter(Boolean) as ChatCompletionMessageParam[],
+      temperature: this.getTemperature(assistant, model),
+      top_p: this.getTopP(assistant, model),
       max_tokens: maxTokens,
       keep_alive: this.keepAliveTime,
-      stream: isSupportStreamOutput
+      stream: isSupportStreamOutput(),
+      ...this.getReasoningEffort(assistant, model),
+      ...getOpenAIWebSearchParams(assistant, model),
+      ...this.getProviderSpecificParameters(assistant, model),
+      ...this.getCustomParameters(assistant)
     })
 
-    if (!isSupportStreamOutput) {
-      let time_completion_millsec = new Date().getTime() - start_time_millsec
+    if (!isSupportStreamOutput()) {
+      const time_completion_millsec = new Date().getTime() - start_time_millsec
       return onChunk({
         text: stream.choices[0].message?.content || '',
         usage: stream.usage,
         metrics: {
           completion_tokens: stream.usage?.completion_tokens,
-          time_completion_millsec: time_completion_millsec,
-          time_first_token_sec: 0,
+          time_completion_millsec,
+          time_first_token_millsec: 0
         }
       })
     }
-
 
     for await (const chunk of stream) {
       if (window.keyv.get(EVENT_NAMES.CHAT_COMPLETION_PAUSED)) {
         break
       }
+
+      const delta = chunk.choices[0]?.delta
+
+      // @ts-expect-error `reasoning_content` not supported by OpenAI for now
+      if (delta?.reasoning_content) {
+        hasReasoningContent = true
+      }
+
       if (time_first_token_millsec == 0) {
         time_first_token_millsec = new Date().getTime() - start_time_millsec
       }
-      let time_completion_millsec = new Date().getTime() - start_time_millsec
+
+      if (time_first_content_millsec == 0 && isReasoningJustDone(delta)) {
+        time_first_content_millsec = new Date().getTime()
+      }
+
+      const time_completion_millsec = new Date().getTime() - start_time_millsec
+      const time_thinking_millsec = time_first_content_millsec ? time_first_content_millsec - start_time_millsec : 0
+
+      // Extract citations from the raw response if available
+      const citations = (chunk as OpenAI.Chat.Completions.ChatCompletionChunk & { citations?: string[] })?.citations
+
       onChunk({
-        text: chunk.choices[0]?.delta?.content || '',
+        text: delta?.content || '',
+        // @ts-ignore key is not typed
+        reasoning_content: delta?.reasoning_content || delta?.reasoning || '',
         usage: chunk.usage,
         metrics: {
           completion_tokens: chunk.usage?.completion_tokens,
-          time_completion_millsec: time_completion_millsec,
-          time_first_token_millsec: time_first_token_millsec,
-        }
+          time_completion_millsec,
+          time_first_token_millsec,
+          time_thinking_millsec
+        },
+        citations
       })
     }
   }
 
-  async translate(message: Message, assistant: Assistant) {
+  async translate(message: Message, assistant: Assistant, onResponse?: (text: string) => void) {
     const defaultModel = getDefaultModel()
     const model = assistant.model || defaultModel
-    const messages = [
-      { role: 'system', content: assistant.prompt },
-      { role: 'user', content: message.content }
-    ]
+    const messages = message.content
+      ? [
+          { role: 'system', content: assistant.prompt },
+          { role: 'user', content: message.content }
+        ]
+      : [{ role: 'user', content: assistant.prompt }]
+
+    const isOpenAIo1 = this.isOpenAIo1(model)
+
+    const isSupportedStreamOutput = () => {
+      if (!onResponse) {
+        return false
+      }
+      if (isOpenAIo1) {
+        return false
+      }
+      return true
+    }
+
+    const stream = isSupportedStreamOutput()
 
     // @ts-ignore key is not typed
     const response = await this.sdk.chat.completions.create({
       model: model.id,
       messages: messages as ChatCompletionMessageParam[],
-      stream: false,
-      keep_alive: this.keepAliveTime
+      stream,
+      keep_alive: this.keepAliveTime,
+      temperature: assistant?.settings?.temperature
     })
 
-    return response.choices[0].message?.content || ''
+    if (!stream) {
+      return response.choices[0].message?.content || ''
+    }
+
+    let text = ''
+
+    for await (const chunk of response) {
+      text += chunk.choices[0]?.delta?.content || ''
+      onResponse?.(text)
+    }
+
+    return text
   }
 
   public async summaries(messages: Message[], assistant: Assistant): Promise<string> {
@@ -218,7 +348,7 @@ export default class OpenAIProvider extends BaseProvider {
 
     const systemMessage = {
       role: 'system',
-      content: SUMMARIZE_PROMPT
+      content: getStoreSetting('topicNamingPrompt') || i18n.t('prompts.title')
     }
 
     const userMessage = {
@@ -235,7 +365,11 @@ export default class OpenAIProvider extends BaseProvider {
       max_tokens: 1000
     })
 
-    return removeQuotes(response.choices[0].message?.content?.substring(0, 50) || '')
+    // 针对思考类模型的返回，总结仅截取</think>之后的内容
+    let content = response.choices[0].message?.content || ''
+    content = content.replace(/^<think>(.*?)<\/think>/s, '')
+
+    return removeSpecialCharacters(content.substring(0, 50))
   }
 
   public async generateText({ prompt, content }: { prompt: string; content: string }): Promise<string> {
@@ -275,13 +409,14 @@ export default class OpenAIProvider extends BaseProvider {
     return response?.questions?.filter(Boolean)?.map((q: any) => ({ content: q })) || []
   }
 
-  public async check(): Promise<{ valid: boolean; error: Error | null }> {
-    const model = this.provider.models[0]
+  public async check(model: Model): Promise<{ valid: boolean; error: Error | null }> {
+    if (!model) {
+      return { valid: false, error: new Error('No model found') }
+    }
 
     const body = {
       model: model.id,
       messages: [{ role: 'user', content: 'hi' }],
-      max_tokens: 100,
       stream: false
     }
 
@@ -302,13 +437,7 @@ export default class OpenAIProvider extends BaseProvider {
 
   public async models(): Promise<OpenAI.Models.Model[]> {
     try {
-      const query: Record<string, any> = {}
-
-      if (this.provider.id === 'silicon') {
-        query.type = 'text'
-      }
-
-      const response = await this.sdk.models.list({ query })
+      const response = await this.sdk.models.list()
 
       if (this.provider.id === 'github') {
         // @ts-ignore key is not typed
@@ -343,6 +472,7 @@ export default class OpenAIProvider extends BaseProvider {
   }
 
   public async generateImage({
+    model,
     prompt,
     negativePrompt,
     imageSize,
@@ -350,33 +480,34 @@ export default class OpenAIProvider extends BaseProvider {
     seed,
     numInferenceSteps,
     guidanceScale,
-    signal
-  }: {
-    prompt: string
-    negativePrompt?: string
-    imageSize: string
-    batchSize: number
-    seed?: string
-    numInferenceSteps: number
-    guidanceScale: number
-    signal?: AbortSignal
-  }): Promise<string[]> {
+    signal,
+    promptEnhancement
+  }: GenerateImageParams): Promise<string[]> {
     const response = (await this.sdk.request({
       method: 'post',
       path: '/images/generations',
       signal,
       body: {
-        model: 'stabilityai/stable-diffusion-3-5-large',
+        model,
         prompt,
         negative_prompt: negativePrompt,
         image_size: imageSize,
         batch_size: batchSize,
         seed: seed ? parseInt(seed) : undefined,
         num_inference_steps: numInferenceSteps,
-        guidance_scale: guidanceScale
+        guidance_scale: guidanceScale,
+        prompt_enhancement: promptEnhancement
       }
     })) as { data: Array<{ url: string }> }
 
     return response.data.map((item) => item.url)
+  }
+
+  public async getEmbeddingDimensions(model: Model): Promise<number> {
+    const data = await this.sdk.embeddings.create({
+      model: model.id,
+      input: model?.provider === 'baidu-cloud' ? ['hi'] : 'hi'
+    })
+    return data.data[0].embedding.length
   }
 }
